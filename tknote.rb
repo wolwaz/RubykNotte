@@ -11,7 +11,7 @@ module Theme
 
   FONTS = {
     ui: ['Noto Sans', 10],
-    editor: ['Noto Sans', 12] 
+    editor: ['Noto Sans', 12]
   }
 
   THEMES = {
@@ -40,11 +40,6 @@ class MarkdownHighlighter
     @text = text_widget
     @current_headers = []
     setup_tags
-  end
-
-  def byte_to_char_offset(str, byte_offset)
-    byte_offset = [0, [byte_offset, str.bytesize].min].max
-    str.byteslice(0, byte_offset).length
   end
 
   def setup_tags
@@ -92,11 +87,13 @@ class MarkdownHighlighter
       end
     end
 
+    # MatchData#begin/#end return character offsets in modern Ruby.
+    # Use them directly — do NOT treat them as byte offsets.
     line_text.scan(/\*\*(?!\*)(.+?)(?<!\*)\*\*/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('bold', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 2}")
@@ -105,9 +102,9 @@ class MarkdownHighlighter
 
     line_text.scan(/(?<!\*)\*([^*]+?)\*(?!\*)/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('italic', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 1}")
@@ -143,11 +140,11 @@ class MarkdownHighlighter
     end
     headers
   end
-  
+
   def get_current_header_line
     current_line = @text.index('insert').split('.')[0].to_i
     current_header_line = nil
-    
+
     get_headers.each do |h|
       if h[:line] <= current_line
         current_header_line = h[:line]
@@ -157,7 +154,7 @@ class MarkdownHighlighter
     end
     current_header_line
   end
-  
+
   def get_current_header_text
     line = get_current_header_line
     return nil unless line
@@ -227,16 +224,16 @@ class FindReplaceDialog
     @text.get('1.0', 'end - 1 char')
   end
 
-  def cursor_byte_offset
-    char_count = @text.count('1.0', 'insert', 'chars')
-    char_count = char_count.first if char_count.is_a?(Array)
-    document_text.slice(0, char_count.to_i).bytes.length
+  # Character offset of the insert cursor (not byte offset).
+  # String#match and MatchData use character positions.
+  def cursor_char_offset
+    n = @text.count('1.0', 'insert', 'chars')
+    n = n.first if n.is_a?(Array)
+    n.to_i
   end
 
-  def byte_offset_to_index(byte_offset)
-    text = document_text
-    char_offset = text.byteslice(0, byte_offset).length
-    @editor.text.index("1.0 + #{char_offset} chars")
+  def char_offset_to_index(char_offset)
+    @text.index("1.0 + #{char_offset} chars")
   end
 
   def build_pattern(pattern_text)
@@ -256,11 +253,11 @@ class FindReplaceDialog
     end
 
     text = document_text
-    byte_offset = cursor_byte_offset
+    char_offset = cursor_char_offset
     m = nil
 
     if direction == :forward
-      m = regex.match(text, byte_offset + 1)
+      m = regex.match(text, char_offset + 1)
       m ||= regex.match(text, 0)
     else
       last_before = nil
@@ -268,14 +265,14 @@ class FindReplaceDialog
       text.scan(regex) do
         cur = Regexp.last_match
         last_overall = cur
-        last_before = cur if cur.begin(0) < byte_offset
+        last_before = cur if cur.begin(0) < char_offset
       end
       m = last_before || last_overall
     end
 
     if m
-      match_start = byte_offset_to_index(m.begin(0))
-      match_end   = byte_offset_to_index(m.end(0))
+      match_start = char_offset_to_index(m.begin(0))
+      match_end   = char_offset_to_index(m.end(0))
       @text.tag_remove('sel', '1.0', 'end')
       @text.tag_add('sel', match_start, match_end)
       @text.mark_set('insert', match_start)
@@ -318,27 +315,21 @@ class FindReplaceDialog
     replace_count = text.scan(regex).size
     new_text = text.gsub(regex) { replace_text }
 
-    # Save cursor position and scroll position
     cursor_index = @text.index('insert')
-    first, last = @text.yview
-    
+    first, _last = @text.yview
+
     @text.replace('1.0', 'end - 1 char', new_text)
-    
-    # Restore cursor position (adjust if text length changed)
-    new_text_length = new_text.length
-    old_text_length = text.length
-    if new_text_length != old_text_length
-      # Try to keep cursor at same relative position
-      char_offset = @text.count('1.0', cursor_index, 'chars').first.to_i
-      if char_offset < new_text_length
-        @text.mark_set('insert', "1.0 + #{char_offset} chars")
-      else
-        @text.mark_set('insert', 'end - 1 char')
-      end
+
+    # Restore cursor; @text.count may return Integer or Array depending on Tk binding
+    n = @text.count('1.0', cursor_index, 'chars')
+    char_offset = (n.is_a?(Array) ? n.first : n).to_i
+    new_len = new_text.length
+    if char_offset < new_len
+      @text.mark_set('insert', "1.0 + #{char_offset} chars")
     else
-      @text.mark_set('insert', cursor_index)
+      @text.mark_set('insert', 'end - 1 char')
     end
-    
+
     @text.yview_moveto(first)
 
     @editor.highlighter.parse_entire_document
@@ -371,6 +362,7 @@ class EditorPane
       highlightthickness 1
       padx Theme::SPACING[:editor_x]
       pady Theme::SPACING[:editor_y]
+      undo true
       yscrollcommand proc { |first, last| scroll.set(first, last) }
     }
 
@@ -392,8 +384,9 @@ class EditorPane
     @text.bind('Control-b', proc { insert_bold; 'break' })
     @text.bind('Control-i', proc { insert_italic; 'break' })
 
-    @text.bind('Control-z', proc { @text.undo; 'break' })
-    @text.bind('Control-y', proc { @text.redo; 'break' })
+    @text.bind('Control-z', proc { @text.edit_undo rescue nil; 'break' })
+    @text.bind('Control-y', proc { @text.edit_redo rescue nil; 'break' })
+    @text.bind('Control-Z', proc { @text.edit_redo rescue nil; 'break' })
 
     @text.bind('Control-plus', proc { @app.zoom_in; 'break' })
     @text.bind('Control-equal', proc { @app.zoom_in; 'break' })
@@ -511,12 +504,10 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      # Insert closing first so start_idx remains valid
       @text.insert(end_idx, '**')
       @text.insert(start_idx, '**')
 
       @text.tag_remove('sel', '1.0', 'end')
-      # After both inserts: original end moved +2 (opening) +2 (closing) = +4
       @text.mark_set('insert', "#{end_idx} + 4 chars")
     else
       @text.insert('insert', '****')
@@ -530,12 +521,10 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      # Insert closing first so start_idx remains valid
       @text.insert(end_idx, '*')
       @text.insert(start_idx, '*')
 
       @text.tag_remove('sel', '1.0', 'end')
-      # After both inserts: original end moved +1 (opening) +1 (closing) = +2
       @text.mark_set('insert', "#{end_idx} + 2 chars")
     else
       @text.insert('insert', '**')
@@ -595,7 +584,6 @@ class EditorPane
     current_line = @text.index('insert').split('.')[0].to_i
     return if current_line <= 1
 
-    # Save selection
     has_selection = @text.tag_ranges('sel').any?
     sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
     sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
@@ -604,14 +592,13 @@ class EditorPane
     prev_text = @text.get("#{current_line - 1}.0", "#{current_line - 1}.end")
 
     @text.replace("#{current_line - 1}.0", "#{current_line}.end", "#{line_text}\n#{prev_text}")
-    
-    # Restore selection on the moved line
+
     if has_selection
       new_sel_start = sel_start.sub(current_line.to_s, (current_line - 1).to_s)
       new_sel_end = sel_end.sub(current_line.to_s, (current_line - 1).to_s)
       @text.tag_add('sel', new_sel_start, new_sel_end)
     end
-    
+
     @text.mark_set('insert', "#{current_line - 1}.0")
     @text.see('insert')
 
@@ -624,7 +611,6 @@ class EditorPane
     total_lines = @text.index('end').split('.')[0].to_i - 1
     return if current_line >= total_lines
 
-    # Save selection
     has_selection = @text.tag_ranges('sel').any?
     sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
     sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
@@ -633,14 +619,13 @@ class EditorPane
     next_text = @text.get("#{current_line + 1}.0", "#{current_line + 1}.end")
 
     @text.replace("#{current_line}.0", "#{current_line + 1}.end", "#{next_text}\n#{line_text}")
-    
-    # Restore selection on the moved line
+
     if has_selection
       new_sel_start = sel_start.sub(current_line.to_s, (current_line + 1).to_s)
       new_sel_end = sel_end.sub(current_line.to_s, (current_line + 1).to_s)
       @text.tag_add('sel', new_sel_start, new_sel_end)
     end
-    
+
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
 
@@ -652,7 +637,6 @@ class EditorPane
     current_line = @text.index('insert').split('.')[0].to_i
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
 
-    # Always insert a newline + the line content (works for empty lines too)
     @text.insert("#{current_line}.end", "\n#{line_text}")
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
@@ -693,7 +677,7 @@ class MarkdownEditor
     setup_ui
     apply_theme
     apply_font_settings
-    
+
     @header_menu_var = TkVariable.new('')
     update_current_header
   end
@@ -787,7 +771,6 @@ class MarkdownEditor
     Tk::Tile::Button.new(@toolbar) { text "H1"; style 'Toolbar.TButton'; command me.method(:insert_h1) }.pack(side: 'left', padx: Theme::SPACING[:sm])
     Tk::Tile::Button.new(@toolbar) { text "H2"; style 'Toolbar.TButton'; command me.method(:insert_h2) }.pack(side: 'left', padx: Theme::SPACING[:sm])
 
-    # Removed native TkMenu for headers, replaced with custom popup
     @header_btn = Tk::Tile::Button.new(@toolbar)
     @header_btn.style = 'Toolbar.TButton'
     @header_btn.text = "Headings"
@@ -816,8 +799,13 @@ class MarkdownEditor
     @editor = EditorPane.new(@tab_frame, self)
   end
 
-  # NEW: Custom dropdown popup for headers with a scrollable listbox
   def show_header_popup
+    # Close any existing popup first
+    if @header_popup && @header_popup.exist?
+      @header_popup.destroy
+      @header_popup = nil
+    end
+
     headers = @editor.highlighter.get_headers
     c = Theme::THEMES[@current_theme]
 
@@ -833,10 +821,9 @@ class MarkdownEditor
     @header_popup.geometry("+#{x}+#{y}")
 
     list_frame = TkFrame.new(@header_popup) { background c[:editor_bg] }.pack(fill: 'both', expand: true)
-    
+
     scroll = Tk::Tile::Scrollbar.new(list_frame).pack(side: 'right', fill: 'y')
-    
-    # Limit to 15 visible rows max so it doesn't take up the whole screen
+
     visible_rows = [headers.size, 15].min
     visible_rows = 1 if visible_rows == 0
 
@@ -865,10 +852,17 @@ class MarkdownEditor
         list.insert('end', h[:text])
         if h[:line] == current_header_line
           list.selection_set(idx)
-          list.see(idx) # Auto-scroll to the active header
+          list.see(idx)
         end
       end
     end
+
+    close_popup = proc {
+      if @header_popup && @header_popup.exist?
+        @header_popup.destroy
+        @header_popup = nil
+      end
+    }
 
     jump_proc = proc {
       sel_indices = list.curselection
@@ -879,19 +873,23 @@ class MarkdownEditor
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
       end
-      @header_popup.destroy if @header_popup
+      close_popup.call
     }
 
     list.bind('<Return>', jump_proc)
     list.bind('<Double-Button-1>', jump_proc)
-    list.bind('<Escape>', proc { @header_popup.destroy if @header_popup })
-    
-    @header_popup.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
-    list_frame.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
+    list.bind('<Escape>', proc { close_popup.call })
+    @header_popup.bind('<Escape>', proc { close_popup.call })
+
+    # Click outside the listbox (on the root window) closes the popup.
+    # Do NOT bind Button-1 on the popup/list_frame itself — that prevented selection.
+    @root.bind('<Button-1>', proc { |ev|
+      close_popup.call
+      @root.bind('<Button-1>', '')
+    })
 
     @header_popup.deiconify
     @header_popup.raise
-    @header_popup.grab
     list.focus
   end
 
@@ -964,7 +962,6 @@ class MarkdownEditor
       filename = Tk.getSaveFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
       return if filename.nil? || filename.empty?
 
-      # Only prompt for overwrite when choosing a *new* filename
       if File.exist?(filename)
         answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?',
                               message: "File '#{File.basename(filename)}' already exists. Overwrite?")
@@ -1067,7 +1064,7 @@ class MarkdownEditor
   def update_current_header
     header_text = @editor.highlighter.get_current_header_text
     current_line = @editor.highlighter.get_current_header_line
-    
+
     if header_text
       display_text = header_text.length > 30 ? header_text[0..27] + "..." : header_text
       @header_btn.text = display_text
@@ -1112,20 +1109,19 @@ class MarkdownEditor
       begin
         line_num = Integer(entry.value)
         total_lines = @editor.text.index('end').split('.')[0].to_i - 1
-        
-        # Validate line number
+
         if line_num < 1
           Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: 'Line number must be at least 1')
           entry.focus
           return
         end
-        
+
         if line_num > total_lines
           Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: "Line number must be at most #{total_lines}")
           entry.focus
           return
         end
-        
+
         @editor.text.mark_set('insert', "#{line_num}.0")
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
@@ -1150,7 +1146,6 @@ class MarkdownEditor
       answer = Tk.messageBox(type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes', message: 'You have unsaved changes. Do you want to save before quitting?')
       if answer == 'yes'
         save_file
-        # Only quit if save actually succeeded (user didn't cancel dialog / write failed)
         @root.destroy unless @is_modified
       elsif answer == 'no'
         @root.destroy
