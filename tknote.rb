@@ -531,7 +531,7 @@ class EditorPane
       @text.tag_remove('sel', '1.0', 'end')
       @text.mark_set('insert', "#{end_idx} + 1 char")
     else
-      @text.insert('insert', '*')
+      @text.insert('insert', '**')
       @text.mark_set('insert', 'insert - 1 char')
     end
     'break'
