@@ -263,13 +263,11 @@ class FindReplaceDialog
       m ||= regex.match(text, 0)
     else
       last_before = nil
-      last_overall = nil
       text.scan(regex) do
         cur = Regexp.last_match
-        last_overall = cur
         last_before = cur if cur.begin(0) < byte_offset
       end
-      m = last_before || last_overall
+      m = last_before || regex.match(text, text.length - 1) || regex.match(text, 0)
     end
 
     if m
@@ -317,8 +315,27 @@ class FindReplaceDialog
     replace_count = text.scan(regex).size
     new_text = text.gsub(regex) { replace_text }
 
+    # Save cursor position and scroll position
+    cursor_index = @text.index('insert')
     first, last = @text.yview
+    
     @text.replace('1.0', 'end - 1 char', new_text)
+    
+    # Restore cursor position (adjust if text length changed)
+    new_text_length = new_text.length
+    old_text_length = text.length
+    if new_text_length != old_text_length
+      # Try to keep cursor at same relative position
+      char_offset = @text.count('1.0', cursor_index, 'chars').first.to_i
+      if char_offset < new_text_length
+        @text.mark_set('insert', "1.0 + #{char_offset} chars")
+      else
+        @text.mark_set('insert', 'end - 1 char')
+      end
+    else
+      @text.mark_set('insert', cursor_index)
+    end
+    
     @text.yview_moveto(first)
 
     @editor.highlighter.parse_entire_document
