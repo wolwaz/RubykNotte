@@ -577,10 +577,23 @@ class EditorPane
     current_line = @text.index('insert').split('.')[0].to_i
     return if current_line <= 1
 
+    # Save selection
+    has_selection = @text.tag_ranges('sel').any?
+    sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
+    sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
+
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
     prev_text = @text.get("#{current_line - 1}.0", "#{current_line - 1}.end")
 
     @text.replace("#{current_line - 1}.0", "#{current_line}.end", "#{line_text}\n#{prev_text}")
+    
+    # Restore selection on the moved line
+    if has_selection
+      new_sel_start = sel_start.sub(current_line.to_s, (current_line - 1).to_s)
+      new_sel_end = sel_end.sub(current_line.to_s, (current_line - 1).to_s)
+      @text.tag_add('sel', new_sel_start, new_sel_end)
+    end
+    
     @text.mark_set('insert', "#{current_line - 1}.0")
     @text.see('insert')
 
@@ -593,10 +606,23 @@ class EditorPane
     total_lines = @text.index('end').split('.')[0].to_i - 1
     return if current_line >= total_lines
 
+    # Save selection
+    has_selection = @text.tag_ranges('sel').any?
+    sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
+    sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
+
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
     next_text = @text.get("#{current_line + 1}.0", "#{current_line + 1}.end")
 
     @text.replace("#{current_line}.0", "#{current_line + 1}.end", "#{next_text}\n#{line_text}")
+    
+    # Restore selection on the moved line
+    if has_selection
+      new_sel_start = sel_start.sub(current_line.to_s, (current_line + 1).to_s)
+      new_sel_end = sel_end.sub(current_line.to_s, (current_line + 1).to_s)
+      @text.tag_add('sel', new_sel_start, new_sel_end)
+    end
+    
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
 
@@ -608,7 +634,9 @@ class EditorPane
     current_line = @text.index('insert').split('.')[0].to_i
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
 
-    @text.insert("#{current_line}.end", "\n#{line_text}")
+    # Only add newline if line is not empty
+    separator = line_text.strip.empty? ? "" : "\n"
+    @text.insert("#{current_line}.end", "#{separator}#{line_text}")
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
 
