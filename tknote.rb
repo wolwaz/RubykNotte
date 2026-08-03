@@ -43,6 +43,7 @@ class MarkdownHighlighter
   end
 
   def byte_to_char_offset(str, byte_offset)
+    byte_offset = [0, [byte_offset, str.bytesize].min].max
     str.byteslice(0, byte_offset).length
   end
 
@@ -99,7 +100,7 @@ class MarkdownHighlighter
       @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 2}")
     end
 
-    line_text.scan(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/) do
+    line_text.scan(/(?<!\*)\*([^*]+?)\*(?!\*)/) do
       m = Regexp.last_match
       content_start = byte_to_char_offset(line_text, m.begin(1))
       content_end   = byte_to_char_offset(line_text, m.end(1))
@@ -231,7 +232,7 @@ class FindReplaceDialog
   def byte_offset_to_index(byte_offset)
     text = document_text
     char_offset = text.byteslice(0, byte_offset).length
-    @text.index("1.0 + #{char_offset} chars")
+    @editor.text.index("1.0 + #{char_offset} chars")
   end
 
   def build_pattern(pattern_text)
@@ -516,7 +517,7 @@ class EditorPane
       @text.tag_remove('sel', '1.0', 'end')
       @text.mark_set('insert', "1.0 + #{end_offset + 2} chars")
     else
-      @text.insert('insert', '**')
+      @text.insert('insert', '*')
       @text.mark_set('insert', 'insert - 1 char')
     end
     'break'
