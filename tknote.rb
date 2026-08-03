@@ -81,12 +81,15 @@ class MarkdownHighlighter
       @text.tag_remove(tag, start_idx, end_idx)
     end
 
-    if line_text.match(/^#\s+(.*)/)
-      @text.tag_add('h1', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.1")
-    elsif line_text.match(/^##\s+(.*)/)
-      @text.tag_add('h2', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.2")
+    if line_text.match(/^#{1,6}\s*(.*)/)
+      hash_count = line_text.match(/^#+/)[0].length
+      if hash_count == 1
+        @text.tag_add('h1', start_idx, end_idx)
+        @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.1")
+      elsif hash_count == 2
+        @text.tag_add('h2', start_idx, end_idx)
+        @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.2")
+      end
     end
 
     line_text.scan(/\*\*(?!\*)(.+?)(?<!\*)\*\*/) do
@@ -131,10 +134,10 @@ class MarkdownHighlighter
 
     (1..total_lines).each do |line_num|
       line_text = @text.get("#{line_num}.0", "#{line_num}.end")
-      if line_text.match(/^##\s+(.*)/)
-        headers << { line: line_num, text: "    #{$1.strip}" }
-      elsif line_text.match(/^#\s+(.*)/)
-        headers << { line: line_num, text: $1.strip }
+      if line_text.match(/^#{1,6}\s*(.*)/)
+        hash_count = line_text.match(/^#+/)[0].length
+        indent = "    " * (hash_count - 1)
+        headers << { line: line_num, text: "#{indent}#{$1.strip}" }
       end
     end
     headers
@@ -1076,7 +1079,7 @@ class MarkdownEditor
       answer = Tk.messageBox(type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes', message: 'You have unsaved changes. Do you want to save before quitting?')
       if answer == 'yes'
         save_file
-        @root.destroy if !@is_modified
+        @root.destroy
       elsif answer == 'no'
         @root.destroy
       end
