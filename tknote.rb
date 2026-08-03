@@ -508,14 +508,11 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
       @text.insert(start_idx, '**')
-      @text.insert("1.0 + #{end_offset + 2} chars", '**')
+      @text.insert(end_idx, '**')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 4} chars")
+      @text.mark_set('insert', "#{end_idx} + 2 chars")
     else
       @text.insert('insert', '****')
       @text.mark_set('insert', 'insert - 2 chars')
@@ -528,14 +525,11 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
       @text.insert(start_idx, '*')
-      @text.insert("1.0 + #{end_offset + 1} chars", '*')
+      @text.insert(end_idx, '*')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 2} chars")
+      @text.mark_set('insert', "#{end_idx} + 1 char")
     else
       @text.insert('insert', '*')
       @text.mark_set('insert', 'insert - 1 char')
