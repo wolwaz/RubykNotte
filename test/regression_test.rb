@@ -240,7 +240,7 @@ class EditorPaneRegressionTest < Minitest::Test
     text = FakeText.new("first\n\nthird")
     pane.instance_variable_set(:@text, text)
     pane.instance_variable_set(:@highlighter, Object.new)
-    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) {}
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
 
     text.mark_set('insert', '2.0')
     pane.duplicate_line
