@@ -263,11 +263,13 @@ class FindReplaceDialog
       m ||= regex.match(text, 0)
     else
       last_before = nil
+      last_overall = nil
       text.scan(regex) do
         cur = Regexp.last_match
+        last_overall = cur
         last_before = cur if cur.begin(0) < byte_offset
       end
-      m = last_before || regex.match(text, text.length - 1) || regex.match(text, 0)
+      m = last_before || last_overall
     end
 
     if m
@@ -508,11 +510,13 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      @text.insert(start_idx, '**')
+      # Insert closing first so start_idx remains valid
       @text.insert(end_idx, '**')
+      @text.insert(start_idx, '**')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "#{end_idx} + 2 chars")
+      # After both inserts: original end moved +2 (opening) +2 (closing) = +4
+      @text.mark_set('insert', "#{end_idx} + 4 chars")
     else
       @text.insert('insert', '****')
       @text.mark_set('insert', 'insert - 2 chars')
@@ -525,11 +529,13 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      @text.insert(start_idx, '*')
+      # Insert closing first so start_idx remains valid
       @text.insert(end_idx, '*')
+      @text.insert(start_idx, '*')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "#{end_idx} + 1 char")
+      # After both inserts: original end moved +1 (opening) +1 (closing) = +2
+      @text.mark_set('insert', "#{end_idx} + 2 chars")
     else
       @text.insert('insert', '**')
       @text.mark_set('insert', 'insert - 1 char')
@@ -645,9 +651,8 @@ class EditorPane
     current_line = @text.index('insert').split('.')[0].to_i
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
 
-    # Only add newline if line is not empty
-    separator = line_text.strip.empty? ? "" : "\n"
-    @text.insert("#{current_line}.end", "#{separator}#{line_text}")
+    # Always insert a newline + the line content (works for empty lines too)
+    @text.insert("#{current_line}.end", "\n#{line_text}")
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
 
@@ -923,7 +928,6 @@ class MarkdownEditor
     @is_modified = false
     @current_filename = 'Untitled.md'
     @current_filepath = nil
-    tab_text = @notebook.itemcget(@tab_frame, 'text').sub(/^\*\s*/, '')
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
     @status_left.text = "Words: 0"
@@ -958,15 +962,16 @@ class MarkdownEditor
     if @current_filepath.nil?
       filename = Tk.getSaveFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
       return if filename.nil? || filename.empty?
-      @current_filepath = filename
-      @current_filename = File.basename(filename)
-    else
-      # Check if file exists and ask for confirmation
-      if File.exist?(@current_filepath)
-        answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?', 
-                              message: "File '#{@current_filename}' already exists. Overwrite?")
+
+      # Only prompt for overwrite when choosing a *new* filename
+      if File.exist?(filename)
+        answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?',
+                              message: "File '#{File.basename(filename)}' already exists. Overwrite?")
         return if answer != 'yes'
       end
+
+      @current_filepath = filename
+      @current_filename = File.basename(filename)
     end
 
     begin
@@ -1144,7 +1149,8 @@ class MarkdownEditor
       answer = Tk.messageBox(type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes', message: 'You have unsaved changes. Do you want to save before quitting?')
       if answer == 'yes'
         save_file
-        @root.destroy
+        # Only quit if save actually succeeded (user didn't cancel dialog / write failed)
+        @root.destroy unless @is_modified
       elsif answer == 'no'
         @root.destroy
       end
