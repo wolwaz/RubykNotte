@@ -1109,13 +1109,31 @@ class MarkdownEditor
     entry.focus
 
     jump_command = lambda {
-      line_num = entry.value.to_i
-      if line_num > 0
+      begin
+        line_num = Integer(entry.value)
+        total_lines = @editor.text.index('end').split('.')[0].to_i - 1
+        
+        # Validate line number
+        if line_num < 1
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: 'Line number must be at least 1')
+          entry.focus
+          return
+        end
+        
+        if line_num > total_lines
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: "Line number must be at most #{total_lines}")
+          entry.focus
+          return
+        end
+        
         @editor.text.mark_set('insert', "#{line_num}.0")
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
+        @goto_dialog.destroy
+      rescue ArgumentError
+        Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Input', message: 'Please enter a valid number')
+        entry.focus
       end
-      @goto_dialog.destroy
     }
 
     entry.bind('Return', jump_command)
