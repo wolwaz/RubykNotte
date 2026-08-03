@@ -81,7 +81,7 @@ class MarkdownHighlighter
       @text.tag_remove(tag, start_idx, end_idx)
     end
 
-    if line_text.match(/^#{1,6}\s*(.*)/)
+    if line_text.match(/^\#{1,6}\s*(.*)/)
       hash_count = line_text.match(/^#+/)[0].length
       if hash_count == 1
         @text.tag_add('h1', start_idx, end_idx)
@@ -134,7 +134,7 @@ class MarkdownHighlighter
 
     (1..total_lines).each do |line_num|
       line_text = @text.get("#{line_num}.0", "#{line_num}.end")
-      if line_text.match(/^#{1,6}\s*(.*)/)
+      if line_text.match(/^\#{1,6}\s*(.*)/)
         hash_count = line_text.match(/^#+/)[0].length
         indent = "    " * (hash_count - 1)
         headers << { line: line_num, text: "#{indent}#{$1.strip}" }
