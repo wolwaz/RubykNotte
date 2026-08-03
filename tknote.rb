@@ -884,6 +884,7 @@ class MarkdownEditor
     @is_modified = false
     @current_filename = 'Untitled.md'
     @current_filepath = nil
+    tab_text = @notebook.itemcget(@tab_frame, 'text').sub(/^\*\s*/, '')
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
     @status_left.text = "Words: 0"
@@ -920,6 +921,13 @@ class MarkdownEditor
       return if filename.nil? || filename.empty?
       @current_filepath = filename
       @current_filename = File.basename(filename)
+    else
+      # Check if file exists and ask for confirmation
+      if File.exist?(@current_filepath)
+        answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?', 
+                              message: "File '#{@current_filename}' already exists. Overwrite?")
+        return if answer != 'yes'
+      end
     end
 
     begin
