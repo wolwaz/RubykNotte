@@ -1,0 +1,22 @@
+name: Ruby CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  syntax:
+    name: Ruby syntax check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Check Ruby syntax
+        run: ruby -c tknote.rb
