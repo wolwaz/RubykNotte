@@ -1,17 +1,18 @@
 require 'tk'
+require 'tkextlib/tile'
 
 # ==========================================
 # 0. CENTRALIZED DESIGN SYSTEM
 # ==========================================
 module Theme
   SPACING = {
-    xs: 4, sm: 6, md: 8, lg: 12, xl: 16,
+    xs: 2, sm: 6, md: 8, lg: 12, xl: 16,
     editor_x: 25, editor_y: 20
   }
 
   FONTS = {
     ui: ['Noto Sans', 10],
-    editor: ['Noto Sans', 12] 
+    editor: ['Noto Sans', 12]
   }
 
   THEMES = {
@@ -38,12 +39,7 @@ end
 class MarkdownHighlighter
   def initialize(text_widget)
     @text = text_widget
-    @current_headers = []
     setup_tags
-  end
-
-  def byte_to_char_offset(str, byte_offset)
-    str.byteslice(0, byte_offset).length
   end
 
   def setup_tags
@@ -53,13 +49,18 @@ class MarkdownHighlighter
     @text.tag_configure('italic', font: [f[0], f[1], 'italic'])
     @text.tag_configure('h1', font: [f[0], f[1] + 6, 'bold'], foreground: '#333333')
     @text.tag_configure('h2', font: [f[0], f[1] + 4, 'bold'], foreground: '#444444')
+    @text.tag_configure('h3', font: [f[0], f[1] + 2, 'bold'], foreground: '#555555')
+    @text.tag_configure('h4', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
+    @text.tag_configure('h5', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
+    @text.tag_configure('h6', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
     @text.tag_raise('md_symbol')
   end
 
   def apply_theme(colors)
     @text.tag_configure('md_symbol', foreground: colors[:md_symbol])
-    @text.tag_configure('h1', foreground: colors[:text_fg])
-    @text.tag_configure('h2', foreground: colors[:text_fg])
+    (1..6).each do |i|
+      @text.tag_configure("h#{i}", foreground: colors[:text_fg])
+    end
     parse_entire_document
   end
 
@@ -69,6 +70,10 @@ class MarkdownHighlighter
     @text.tag_configure('italic', font: [f[0], base_font_size, 'italic'])
     @text.tag_configure('h1', font: [f[0], base_font_size + 6, 'bold'])
     @text.tag_configure('h2', font: [f[0], base_font_size + 4, 'bold'])
+    @text.tag_configure('h3', font: [f[0], base_font_size + 2, 'bold'])
+    @text.tag_configure('h4', font: [f[0], base_font_size + 1, 'bold'])
+    @text.tag_configure('h5', font: [f[0], base_font_size + 1, 'bold'])
+    @text.tag_configure('h6', font: [f[0], base_font_size + 1, 'bold'])
   end
 
   def parse_line(line_num)
@@ -76,34 +81,33 @@ class MarkdownHighlighter
     end_idx = "#{line_num}.end"
     line_text = @text.get(start_idx, end_idx)
 
-    ['h1', 'h2', 'bold', 'italic', 'md_symbol'].each do |tag|
+    ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'md_symbol'].each do |tag|
       @text.tag_remove(tag, start_idx, end_idx)
     end
 
-    if line_text.match(/^#\s+(.*)/)
-      @text.tag_add('h1', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.1")
-    elsif line_text.match(/^##\s+(.*)/)
-      @text.tag_add('h2', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.2")
+    if m = line_text.match(/^(\#{1,6})\s+(.*)/)
+      hash_count = m[1].length
+      tag = "h#{hash_count}"
+      @text.tag_add(tag, start_idx, end_idx)
+      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.#{hash_count}")
     end
 
     line_text.scan(/\*\*(?!\*)(.+?)(?<!\*)\*\*/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('bold', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 2}")
       @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 2}")
     end
 
-    line_text.scan(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/) do
+    line_text.scan(/(?<!\*)\*([^*]+?)\*(?!\*)/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('italic', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 1}")
@@ -130,19 +134,20 @@ class MarkdownHighlighter
 
     (1..total_lines).each do |line_num|
       line_text = @text.get("#{line_num}.0", "#{line_num}.end")
-      if line_text.match(/^##\s+(.*)/)
-        headers << { line: line_num, text: "    #{$1.strip}" }
-      elsif line_text.match(/^#\s+(.*)/)
-        headers << { line: line_num, text: $1.strip }
+      if m = line_text.match(/^(\#{1,6})\s+(.*)/)
+        hash_count = m[1].length
+        content = m[2] || ""
+        indent = "    " * (hash_count - 1)
+        headers << { line: line_num, text: "#{indent}#{content.strip}" }
       end
     end
     headers
   end
-  
+
   def get_current_header_line
     current_line = @text.index('insert').split('.')[0].to_i
     current_header_line = nil
-    
+
     get_headers.each do |h|
       if h[:line] <= current_line
         current_header_line = h[:line]
@@ -152,7 +157,7 @@ class MarkdownHighlighter
     end
     current_header_line
   end
-  
+
   def get_current_header_text
     line = get_current_header_line
     return nil unless line
@@ -222,15 +227,13 @@ class FindReplaceDialog
     @text.get('1.0', 'end - 1 char')
   end
 
-  def cursor_byte_offset
-    char_count = @text.count('1.0', 'insert', 'chars')
-    char_count = char_count.first if char_count.is_a?(Array)
-    document_text.slice(0, char_count.to_i).bytes.length
+  def cursor_char_offset
+    n = @text.count('1.0', 'insert', 'chars')
+    n = n.first if n.is_a?(Array)
+    (n || 0).to_i
   end
 
-  def byte_offset_to_index(byte_offset)
-    text = document_text
-    char_offset = text.byteslice(0, byte_offset).length
+  def char_offset_to_index(char_offset)
     @text.index("1.0 + #{char_offset} chars")
   end
 
@@ -251,11 +254,11 @@ class FindReplaceDialog
     end
 
     text = document_text
-    byte_offset = cursor_byte_offset
+    char_offset = cursor_char_offset
     m = nil
 
     if direction == :forward
-      m = regex.match(text, byte_offset + 1)
+      m = regex.match(text, char_offset + 1)
       m ||= regex.match(text, 0)
     else
       last_before = nil
@@ -263,14 +266,14 @@ class FindReplaceDialog
       text.scan(regex) do
         cur = Regexp.last_match
         last_overall = cur
-        last_before = cur if cur.begin(0) < byte_offset
+        last_before = cur if cur.begin(0) < char_offset
       end
       m = last_before || last_overall
     end
 
     if m
-      match_start = byte_offset_to_index(m.begin(0))
-      match_end   = byte_offset_to_index(m.end(0))
+      match_start = char_offset_to_index(m.begin(0))
+      match_end   = char_offset_to_index(m.end(0))
       @text.tag_remove('sel', '1.0', 'end')
       @text.tag_add('sel', match_start, match_end)
       @text.mark_set('insert', match_start)
@@ -287,7 +290,8 @@ class FindReplaceDialog
 
       @text.replace(match_start, match_end, @replace_entry.value)
 
-      @editor.highlighter.parse_entire_document
+      line_num = match_start.split('.')[0].to_i
+      @editor.highlighter.parse_line(line_num)
       @editor.app.update_header_list
 
       @text.mark_set('insert', match_start)
@@ -311,10 +315,23 @@ class FindReplaceDialog
 
     text = document_text
     replace_count = text.scan(regex).size
-    new_text = text.gsub(regex) { replace_text }
+    
+    new_text = text.gsub(regex, replace_text)
 
-    first, last = @text.yview
+    cursor_index = @text.index('insert')
+    first, _last = @text.yview
+
     @text.replace('1.0', 'end - 1 char', new_text)
+
+    n = @text.count('1.0', cursor_index, 'chars')
+    char_offset = (n.is_a?(Array) ? n.first : n).to_i
+    new_len = new_text.length
+    if char_offset < new_len
+      @text.mark_set('insert', "1.0 + #{char_offset} chars")
+    else
+      @text.mark_set('insert', 'end - 1 char')
+    end
+
     @text.yview_moveto(first)
 
     @editor.highlighter.parse_entire_document
@@ -330,9 +347,15 @@ end
 class EditorPane
   attr_reader :text, :highlighter, :app
 
+  PAIR_OPEN_TO_CLOSE = { '*' => '*', '`' => '`', '[' => ']', '(' => ')' }.freeze
+  SYMMETRIC_PAIR_CHARS = ['*', '`'].freeze
+  PAIR_CLOSER_CHARS = [']', ')'].freeze
+
   def initialize(parent_frame, app)
     @app = app
     @debounce_timer = nil
+    @auto_close_marks = []
+    @auto_close_seq = 0
     @text_frame = Tk::Tile::Frame.new(parent_frame)
     @text_frame.pack(fill: 'both', expand: true, padx: 15, pady: 15)
 
@@ -347,6 +370,7 @@ class EditorPane
       highlightthickness 1
       padx Theme::SPACING[:editor_x]
       pady Theme::SPACING[:editor_y]
+      undo true
       yscrollcommand proc { |first, last| scroll.set(first, last) }
     }
 
@@ -368,8 +392,9 @@ class EditorPane
     @text.bind('Control-b', proc { insert_bold; 'break' })
     @text.bind('Control-i', proc { insert_italic; 'break' })
 
-    @text.bind('Control-z', proc { @text.undo; 'break' })
-    @text.bind('Control-y', proc { @text.redo; 'break' })
+    @text.bind('Control-z', proc { @text.edit_undo rescue nil; 'break' })
+    @text.bind('Control-y', proc { @text.edit_redo rescue nil; 'break' })
+    @text.bind('Control-Z', proc { @text.edit_redo rescue nil; 'break' })
 
     @text.bind('Control-plus', proc { @app.zoom_in; 'break' })
     @text.bind('Control-equal', proc { @app.zoom_in; 'break' })
@@ -437,14 +462,29 @@ class EditorPane
 
     @text.bind('KeyPress', proc { |ev|
       char = ev.char
-      closing_pairs = { '*' => '*', '`' => '`', '[' => ']', '(' => ')' }
 
-      if closing_pairs.key?(char) && @text.tag_ranges('sel').empty?
-        closing_char = closing_pairs[char]
-        Tk.after(0, proc {
-          @text.insert('insert', closing_char)
-          @text.mark_set('insert', 'insert - 1 char')
-        })
+      if @text.tag_ranges('sel').empty?
+        if PAIR_OPEN_TO_CLOSE.key?(char)
+          closer = PAIR_OPEN_TO_CLOSE[char]
+          next_char = @text.get('insert', 'insert + 1 char')
+
+          if SYMMETRIC_PAIR_CHARS.include?(char) && next_char == closer && consume_auto_close_mark
+            @text.mark_set('insert', 'insert + 1 char')
+            next 'break'
+          else
+            Tk.after(0, proc {
+              @text.insert('insert', closer)
+              register_auto_close_mark
+              @text.mark_set('insert', 'insert - 1 char')
+            })
+          end
+        elsif PAIR_CLOSER_CHARS.include?(char)
+          next_char = @text.get('insert', 'insert + 1 char')
+          if next_char == char && consume_auto_close_mark
+            @text.mark_set('insert', 'insert + 1 char')
+            next 'break'
+          end
+        end
       end
 
       next if ev.keysym.nil? || ev.keysym =~ /Shift|Control|Alt|Left|Right|Up|Down|Home|End|Prior|Next/
@@ -462,13 +502,7 @@ class EditorPane
       Tk.after_cancel(@debounce_timer) if @debounce_timer
       @debounce_timer = Tk.after(300, method(:parse_and_update))
 
-      text_content = @text.value
-      words = text_content.split.size
-      chars = text_content.length
-      minutes = (words / 200.0).ceil
-      time_str = minutes < 1 ? "< 1 min" : "#{minutes} min"
-
-      @app.status_left.text = "Words: #{words} | Chars: #{chars} | Time: #{time_str}"
+      @app.update_status_left
     end
 
     @text.bind('Control-v') do
@@ -476,10 +510,25 @@ class EditorPane
     end
   end
 
-  def get_char_offset(index)
-    n = @text.count('1.0', index, 'chars')
-    n = n.first if n.is_a?(Array)
-    n.to_i
+  def register_auto_close_mark
+    name = "autoclose_#{@auto_close_seq += 1}"
+    @text.mark_set(name, 'insert')
+    @auto_close_marks << name
+  end
+
+  def consume_auto_close_mark
+    return false if @auto_close_marks.empty?
+    cursor = @text.index('insert')
+    match = @auto_close_marks.find { |m| @text.mark_names.include?(m) && @text.index(m) == cursor }
+    return false unless match
+    @auto_close_marks.delete(match)
+    @text.mark_unset(match)
+    true
+  end
+
+  def reset_auto_close_tracking
+    @auto_close_marks.each { |m| @text.mark_unset(m) if @text.mark_names.include?(m) }
+    @auto_close_marks.clear
   end
 
   def insert_bold
@@ -487,14 +536,11 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
+      @text.insert(end_idx, '**')
       @text.insert(start_idx, '**')
-      @text.insert("1.0 + #{end_offset + 2} chars", '**')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 4} chars")
+      @text.mark_set('insert', "#{end_idx} + 4 chars")
     else
       @text.insert('insert', '****')
       @text.mark_set('insert', 'insert - 2 chars')
@@ -507,14 +553,11 @@ class EditorPane
       start_idx = @text.index('sel.first')
       end_idx = @text.index('sel.last')
 
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
+      @text.insert(end_idx, '*')
       @text.insert(start_idx, '*')
-      @text.insert("1.0 + #{end_offset + 1} chars", '*')
 
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 2} chars")
+      @text.mark_set('insert', "#{end_idx} + 2 chars")
     else
       @text.insert('insert', '**')
       @text.mark_set('insert', 'insert - 1 char')
@@ -560,7 +603,7 @@ class EditorPane
   def parse_after_paste
     @highlighter.parse_entire_document
     @app.update_header_list
-    @app.status_left.text = "Words: #{@text.value.split.size}"
+    @app.update_status_left
   end
 
   def parse_and_update
@@ -570,14 +613,25 @@ class EditorPane
   end
 
   def move_line_up
-    current_line = @text.index('insert').split('.')[0].to_i
+    current_line, current_col = @text.index('insert').split('.').map(&:to_i)
     return if current_line <= 1
+
+    has_selection = @text.tag_ranges('sel').any?
+    sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
+    sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
 
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
     prev_text = @text.get("#{current_line - 1}.0", "#{current_line - 1}.end")
 
     @text.replace("#{current_line - 1}.0", "#{current_line}.end", "#{line_text}\n#{prev_text}")
-    @text.mark_set('insert', "#{current_line - 1}.0")
+
+    if has_selection
+      new_sel_start = sel_start.sub(/\A\d+/, (current_line - 1).to_s)
+      new_sel_end = sel_end.sub(/\A\d+/, (current_line - 1).to_s)
+      @text.tag_add('sel', new_sel_start, new_sel_end)
+    end
+
+    @text.mark_set('insert', "#{current_line - 1}.#{current_col}")
     @text.see('insert')
 
     @highlighter.parse_line(current_line)
@@ -585,15 +639,26 @@ class EditorPane
   end
 
   def move_line_down
-    current_line = @text.index('insert').split('.')[0].to_i
+    current_line, current_col = @text.index('insert').split('.').map(&:to_i)
     total_lines = @text.index('end').split('.')[0].to_i - 1
     return if current_line >= total_lines
+
+    has_selection = @text.tag_ranges('sel').any?
+    sel_start = has_selection ? @text.index('sel.first') : @text.index('insert')
+    sel_end = has_selection ? @text.index('sel.last') : @text.index('insert')
 
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
     next_text = @text.get("#{current_line + 1}.0", "#{current_line + 1}.end")
 
     @text.replace("#{current_line}.0", "#{current_line + 1}.end", "#{next_text}\n#{line_text}")
-    @text.mark_set('insert', "#{current_line + 1}.0")
+
+    if has_selection
+      new_sel_start = sel_start.sub(/\A\d+/, (current_line + 1).to_s)
+      new_sel_end = sel_end.sub(/\A\d+/, (current_line + 1).to_s)
+      @text.tag_add('sel', new_sel_start, new_sel_end)
+    end
+
+    @text.mark_set('insert', "#{current_line + 1}.#{current_col}")
     @text.see('insert')
 
     @highlighter.parse_line(current_line)
@@ -629,7 +694,7 @@ class MarkdownEditor
     @root.pack_propagate(false)
 
     @is_modified = false
-    @current_filename = 'New File'
+    @current_filename = 'Untitled.md'
     @current_filepath = nil
     @base_font_size = 12
     @line_spacing = 4
@@ -640,12 +705,12 @@ class MarkdownEditor
     @find_dialog = nil
     @goto_dialog = nil
     @header_popup = nil
+    @header_popup_scroll = nil
 
     setup_ui
     apply_theme
     apply_font_settings
-    
-    @header_menu_var = TkVariable.new('')
+
     update_current_header
   end
 
@@ -654,8 +719,13 @@ class MarkdownEditor
     Tk.bind('Text', 'Control-b', kill_proc)
     Tk.bind('Text', 'Control-i', kill_proc)
     Tk.bind('Text', 'Control-d', kill_proc)
-    Tk.bind('Text', 'Control-h', kill_proc)
     Tk.bind('Text', 'Control-k', kill_proc)
+    Tk.bind('Text', 'Control-f', kill_proc)
+    Tk.bind('Text', 'Control-g', kill_proc)
+    Tk.bind('Text', 'Control-s', kill_proc)
+    Tk.bind('Text', 'Control-o', kill_proc)
+    Tk.bind('Text', 'Control-n', kill_proc)
+    Tk.bind('Text', 'Control-q', kill_proc)
   end
 
   def setup_ui
@@ -680,7 +750,7 @@ class MarkdownEditor
       y = @file_btn.winfo_rooty + @file_btn.winfo_height
       @file_menu.popup(x, y)
     }
-    @file_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @file_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @edit_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
     @edit_menu.add('command', label: 'Find / Replace...', accel: 'Ctrl+F', command: method(:open_find_dialog))
@@ -693,7 +763,7 @@ class MarkdownEditor
       y = @edit_btn.winfo_rooty + @edit_btn.winfo_height
       @edit_menu.popup(x, y)
     }
-    @edit_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @edit_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @view_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
     @view_menu.add('command', label: 'Zoom In', accel: 'Ctrl++', command: method(:zoom_in))
@@ -713,7 +783,7 @@ class MarkdownEditor
       y = @view_btn.winfo_rooty + @view_btn.winfo_height
       @view_menu.popup(x, y)
     }
-    @view_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @view_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @theme_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
     @theme_menu.add('command', label: 'Sepia', command: proc { @current_theme = :sepia; apply_theme })
@@ -727,25 +797,30 @@ class MarkdownEditor
       y = @theme_btn.winfo_rooty + @theme_btn.winfo_height
       @theme_menu.popup(x, y)
     }
-    @theme_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @theme_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @toolbar = Tk::Tile::Frame.new(@root)
     @toolbar.style = 'Toolbar.TFrame'
     @toolbar.pack(fill: 'x')
 
-    Tk::Tile::Button.new(@toolbar) { text "Bold"; style 'Toolbar.TButton'; command me.method(:insert_bold) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "Italic"; style 'Toolbar.TButton'; command me.method(:insert_italic) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "H1"; style 'Toolbar.TButton'; command me.method(:insert_h1) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "H2"; style 'Toolbar.TButton'; command me.method(:insert_h2) }.pack(side: 'left', padx: Theme::SPACING[:sm])
+    # Fix: Reduced text to single letters/abbreviations and padx to xs for compactness
+    Tk::Tile::Button.new(@toolbar) { text "B"; style 'Toolbar.TButton'; command me.method(:insert_bold) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "I"; style 'Toolbar.TButton'; command me.method(:insert_italic) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H1"; style 'Toolbar.TButton'; command me.method(:insert_h1) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H2"; style 'Toolbar.TButton'; command me.method(:insert_h2) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H3"; style 'Toolbar.TButton'; command me.method(:insert_h3) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H4"; style 'Toolbar.TButton'; command me.method(:insert_h4) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H5"; style 'Toolbar.TButton'; command me.method(:insert_h5) }.pack(side: 'left', padx: Theme::SPACING[:xs])
+    Tk::Tile::Button.new(@toolbar) { text "H6"; style 'Toolbar.TButton'; command me.method(:insert_h6) }.pack(side: 'left', padx: Theme::SPACING[:xs])
 
-    # Removed native TkMenu for headers, replaced with custom popup
     @header_btn = Tk::Tile::Button.new(@toolbar)
     @header_btn.style = 'Toolbar.TButton'
     @header_btn.text = "Headings"
     @header_btn.command = proc { me.show_header_popup }
-    @header_btn.pack(side: 'right', padx: Theme::SPACING[:sm])
+    @header_btn.pack(side: 'right', padx: Theme::SPACING[:xs])
 
-    Tk::Tile::Button.new(@toolbar) { text "Read-Only Toggle"; style 'Toolbar.TButton'; command me.method(:toggle_readonly) }.pack(side: 'right', padx: Theme::SPACING[:sm])
+    # Fix: Shortened text to just "Read-Only"
+    Tk::Tile::Button.new(@toolbar) { text "Read-Only"; style 'Toolbar.TButton'; command me.method(:toggle_readonly) }.pack(side: 'right', padx: Theme::SPACING[:xs])
 
     @notebook = Tk::Tile::Notebook.new(@root)
     @notebook.pack(fill: 'both', expand: true)
@@ -767,8 +842,18 @@ class MarkdownEditor
     @editor = EditorPane.new(@tab_frame, self)
   end
 
-  # NEW: Custom dropdown popup for headers with a scrollable listbox
+  def update_status_left
+    text_content = @editor.text.value.chomp
+    words = text_content.split.size
+    chars = text_content.length
+    minutes = (words / 200.0).ceil
+    time_str = minutes < 1 ? "< 1 min" : "#{minutes} min"
+    @status_left.text = "Words: #{words} | Chars: #{chars} | Time: #{time_str}"
+  end
+
   def show_header_popup
+    close_header_popup
+
     headers = @editor.highlighter.get_headers
     c = Theme::THEMES[@current_theme]
 
@@ -781,13 +866,11 @@ class MarkdownEditor
       relief 'solid'
       background c[:border]
     end
-    @header_popup.geometry("+#{x}+#{y}")
 
     list_frame = TkFrame.new(@header_popup) { background c[:editor_bg] }.pack(fill: 'both', expand: true)
-    
-    scroll = Tk::Tile::Scrollbar.new(list_frame).pack(side: 'right', fill: 'y')
-    
-    # Limit to 15 visible rows max so it doesn't take up the whole screen
+    @header_popup_scroll = Tk::Tile::Scrollbar.new(list_frame).pack(side: 'right', fill: 'y')
+    scroll = @header_popup_scroll
+
     visible_rows = [headers.size, 15].min
     visible_rows = 1 if visible_rows == 0
 
@@ -816,7 +899,7 @@ class MarkdownEditor
         list.insert('end', h[:text])
         if h[:line] == current_header_line
           list.selection_set(idx)
-          list.see(idx) # Auto-scroll to the active header
+          list.see(idx)
         end
       end
     end
@@ -830,35 +913,94 @@ class MarkdownEditor
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
       end
-      @header_popup.destroy if @header_popup
+      close_header_popup
     }
 
-    list.bind('<Return>', jump_proc)
-    list.bind('<Double-Button-1>', jump_proc)
-    list.bind('<Escape>', proc { @header_popup.destroy if @header_popup })
+    list.bind('Return', jump_proc)
+    list.bind('Double-Button-1', jump_proc)
+    list.bind('Escape', proc { close_header_popup })
+    @header_popup.bind('Escape', proc { close_header_popup })
+
+    @header_popup.bind('ButtonPress-1') { |ev| close_header_popup if ev.widget == @header_popup }
+
+    Tk.update_idletasks
     
-    @header_popup.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
-    list_frame.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
+    popup_w = list.winfo_reqwidth + 20
+    popup_h = list.winfo_reqheight + 4
+
+    screen_w = @root.winfo_screenwidth
+    screen_h = @root.winfo_screenheight
+
+    app_x = @root.winfo_rootx
+    app_y = @root.winfo_rooty
+    app_w = @root.winfo_width
+    app_right = app_x + app_w
+
+    if x + popup_w > app_right
+      x = app_right - popup_w - 10
+    end
+    
+    if x + popup_w > screen_w
+      x = screen_w - popup_w - 10
+    end
+
+    x = app_x + 10 if x < app_x + 10
+    x = 10 if x < 10
+
+    if y + popup_h > screen_h
+      y = screen_h - popup_h - 10
+    end
+    y = 10 if y < 10
+
+    @header_popup.geometry("+#{x}+#{y}")
 
     @header_popup.deiconify
     @header_popup.raise
-    @header_popup.grab
+    @header_popup.grab_set
     list.focus
   end
 
-  def open_find_dialog
-    if @find_dialog && @find_dialog.exist?
-      @find_dialog.focus
-    else
-      @find_dialog = FindReplaceDialog.new(@root, @editor)
+  def close_header_popup
+    return unless @header_popup && @header_popup.exist?
+
+    begin
+      @header_popup.grab_release
+    rescue
     end
+
+    if @header_popup_scroll
+      begin
+        @header_popup_scroll.event_generate('ButtonRelease-1')
+      rescue
+      end
+    end
+
+    @header_popup.destroy
+    @header_popup = nil
+    @header_popup_scroll = nil
+  end
+
+  def open_find_dialog
+    begin
+      if @find_dialog && @find_dialog.exist?
+        @find_dialog.focus
+        return
+      end
+    rescue TkCallbackBreak, RuntimeError
+      @find_dialog = nil
+    end
+    @find_dialog = FindReplaceDialog.new(@root, @editor)
   end
 
   def insert_bold; @editor.insert_bold; end
   def insert_italic; @editor.insert_italic; end
 
-  def insert_h1; @editor.text.insert('insert', "# "); end
-  def insert_h2; @editor.text.insert('insert', "## "); end
+  def insert_h1; @editor.text.insert('insert linestart', "# "); end
+  def insert_h2; @editor.text.insert('insert linestart', "## "); end
+  def insert_h3; @editor.text.insert('insert linestart', "### "); end
+  def insert_h4; @editor.text.insert('insert linestart', "#### "); end
+  def insert_h5; @editor.text.insert('insert linestart', "##### "); end
+  def insert_h6; @editor.text.insert('insert linestart', "###### "); end
 
   def toggle_readonly
     if @editor.text.cget('state') == 'normal'
@@ -873,6 +1015,7 @@ class MarkdownEditor
   def new_file
     @editor.text.state = 'normal'
     @editor.text.value = ""
+    @editor.reset_auto_close_tracking
     @editor.text.edit_reset
     @editor.text.tag_names.each do |tag|
       @editor.text.tag_remove(tag, '1.0', 'end')
@@ -882,7 +1025,7 @@ class MarkdownEditor
     @current_filepath = nil
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: 0"
+    update_status_left
     update_header_list
   end
 
@@ -899,21 +1042,30 @@ class MarkdownEditor
 
     @editor.text.state = 'normal'
     @editor.text.value = content
+    @editor.reset_auto_close_tracking
     @current_filepath = filename
     @current_filename = File.basename(filename)
     @is_modified = false
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: #{@editor.text.value.split.size}"
+    update_status_left
 
     @editor.highlighter.parse_entire_document
     update_header_list
+    update_current_header
   end
 
   def save_file
     if @current_filepath.nil?
       filename = Tk.getSaveFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
       return if filename.nil? || filename.empty?
+
+      if File.exist?(filename)
+        answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?',
+                              message: "File '#{File.basename(filename)}' already exists. Overwrite?")
+        return if answer != 'yes'
+      end
+
       @current_filepath = filename
       @current_filename = File.basename(filename)
     end
@@ -928,7 +1080,7 @@ class MarkdownEditor
     @is_modified = false
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: #{@editor.text.value.split.size}"
+    update_status_left
   end
 
   def apply_theme
@@ -946,21 +1098,24 @@ class MarkdownEditor
     Tk::Tile::Style.configure('Status.TFrame', background: c[:status_bg])
     Tk::Tile::Style.configure('Tab.TFrame', background: c[:window_bg])
 
-    Tk::Tile::Style.configure('TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:sm]}")
+    # Fix: Reduced padding to xs (4px) so buttons tightly fit their text
+    Tk::Tile::Style.configure('TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:xs]} #{Theme::SPACING[:xs]}")
     Tk::Tile::Style.map('TButton',
       background: [:active, c[:button_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:accent]],
       foreground: [:active, c[:text_fg]]
     )
 
-    Tk::Tile::Style.configure('Toolbar.TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:sm]}")
+    # Fix: Reduced padding to xs (4px) so buttons tightly fit their text
+    Tk::Tile::Style.configure('Toolbar.TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:xs]} #{Theme::SPACING[:xs]}")
     Tk::Tile::Style.map('Toolbar.TButton',
       background: [:active, c[:button_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:accent]],
       foreground: [:active, c[:text_fg]]
     )
 
-    Tk::Tile::Style.configure('Menubar.TButton', font: ui_font, background: c[:toolbar_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:xs]}")
+    # Fix: Reduced padding to xs (4px) so buttons tightly fit their text
+    Tk::Tile::Style.configure('Menubar.TButton', font: ui_font, background: c[:toolbar_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:xs]} #{Theme::SPACING[:xs]}")
     Tk::Tile::Style.map('Menubar.TButton',
       background: [:active, c[:menu_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:border]],
@@ -1000,7 +1155,6 @@ class MarkdownEditor
     f = Theme::FONTS[:editor]
     @editor.text.configure(font: [f[0], @base_font_size], spacing1: @line_spacing, spacing2: @line_spacing, spacing3: @line_spacing)
     @editor.highlighter.apply_font_settings(@base_font_size)
-    @editor.highlighter.parse_entire_document
   end
 
   def update_header_list
@@ -1009,15 +1163,12 @@ class MarkdownEditor
 
   def update_current_header
     header_text = @editor.highlighter.get_current_header_text
-    current_line = @editor.highlighter.get_current_header_line
-    
+
     if header_text
       display_text = header_text.length > 30 ? header_text[0..27] + "..." : header_text
       @header_btn.text = display_text
-      @header_menu_var.value = current_line.to_s if current_line
     else
       @header_btn.text = "Headings"
-      @header_menu_var.value = ""
     end
   end
 
@@ -1037,9 +1188,13 @@ class MarkdownEditor
   end
 
   def goto_line_dialog
-    if @goto_dialog && @goto_dialog.exist?
-      @goto_dialog.focus
-      return
+    begin
+      if @goto_dialog && @goto_dialog.exist?
+        @goto_dialog.focus
+        return
+      end
+    rescue TkCallbackBreak, RuntimeError
+      @goto_dialog = nil
     end
 
     @goto_dialog = TkToplevel.new(@root) { title "Go to Line" }
@@ -1052,13 +1207,30 @@ class MarkdownEditor
     entry.focus
 
     jump_command = lambda {
-      line_num = entry.value.to_i
-      if line_num > 0
+      begin
+        line_num = Integer(entry.value)
+        total_lines = @editor.text.index('end').split('.')[0].to_i - 1
+
+        if line_num < 1
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: 'Line number must be at least 1')
+          entry.focus
+          return
+        end
+
+        if line_num > total_lines
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: "Line number must be at most #{total_lines}")
+          entry.focus
+          return
+        end
+
         @editor.text.mark_set('insert', "#{line_num}.0")
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
+        @goto_dialog.destroy
+      rescue ArgumentError
+        Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Input', message: 'Please enter a valid number')
+        entry.focus
       end
-      @goto_dialog.destroy
     }
 
     entry.bind('Return', jump_command)
@@ -1075,7 +1247,7 @@ class MarkdownEditor
       answer = Tk.messageBox(type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes', message: 'You have unsaved changes. Do you want to save before quitting?')
       if answer == 'yes'
         save_file
-        @root.destroy if !@is_modified
+        @root.destroy unless @is_modified
       elsif answer == 'no'
         @root.destroy
       end
