@@ -1,6 +1,7 @@
 # RubykNotte
 
 **Disclaimer, this app is vibe coded entirely, and I have no idea what I'm even doing**
+
 **Also, its broken as hell**
 
 A lightweight Markdown editor written in pure Ruby + Tk.
