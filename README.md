@@ -50,3 +50,5 @@ A lightweight Markdown editor written in pure Ruby + Tk.
 - Line movement (up/down) does not preserve text selection
 - Duplicating empty lines may create extra blank lines
 - No confirmation dialog when overwriting existing files on save
+- Header navigation popup cant be closed and the content cant be selected
+- Auto pairing broken
