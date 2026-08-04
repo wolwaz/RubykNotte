@@ -39,7 +39,7 @@ A lightweight Markdown editor written in pure Ruby + Tk.
 - **Read-Only Mode** - Toggle read-only state for the editor (via toolbar button)
 - **Zoom In/Out** - Adjust font size with `Ctrl++`/`Ctrl+-` (reset with `Ctrl+0`)
 - **Go to Line** - Jump to a specific line number (`Ctrl+G`)
-- **Multi-tab support** - Notebook interface for multiple documents (basic implementation)
+- **Multi-tab support** - Notebook interface for multiple documents (basic implementation) -- Not implemented yet
 - **Paste handling** - Syntax highlighting updates after pasting
 - **Real-time preview** - Live updating of header list and current header display
 
@@ -50,5 +50,4 @@ A lightweight Markdown editor written in pure Ruby + Tk.
 - Line movement (up/down) does not preserve text selection
 - Duplicating empty lines may create extra blank lines
 - No confirmation dialog when overwriting existing files on save
-- Header navigation popup cant be closed and the content cant be selected
-- Auto pairing broken
+- Header navigation popup still not working as intended
