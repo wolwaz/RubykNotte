@@ -1,184 +1,245 @@
 # RubykNotte Roadmap
 
-This roadmap tracks the direction of RubykNotte as a fast, lightweight, writer-focused Markdown editor built entirely with Ruby and Tk.
+Direction for RubykNotte: a fast, lightweight, **writer-focused** Markdown editor built entirely with **Ruby and Tk**.
 
-The priorities are:
+## Philosophy (do not break these)
 
-1. Keep typing, scrolling, searching, and file loading responsive.
-2. Add features that are useful for writers and planners.
-3. Preserve plain Markdown files and local workflows.
-4. Avoid unnecessary dependencies, cloud requirements, and built-in AI features.
-5. Improve the UI without sacrificing performance or rewriting stable editor behavior without a clear reason.
+1. **Responsiveness first** — typing, scrolling, searching, and file load stay snappy.
+2. **Useful for writers and planners** — features must earn their place at the keyboard.
+3. **Plain local Markdown** — normal `.md` files, no proprietary format, no cloud requirement.
+4. **No Electron, no bundled AI** — pure Ruby + system Tk; keep the dependency surface tiny.
+5. **Improve, don’t rewrite** — prefer small, reversible changes over tearing out a working editor core.
 
-## Current Focus
+Features are added only when they help writing, planning, editing, safety, navigation, or organization **without** undermining responsiveness.
 
-- Stabilize the current editor and fix known regressions.
-- Finish the custom theme system.
-- Improve UI consistency across ttk and classic Tk widgets.
-- Keep large documents responsive while more features are added.
-- Establish repeatable performance tests and a large Markdown stress-test file.
+---
 
-## Phase 1: Stabilization and Core Reliability
+## Current release: v0.2.0
 
-- [ ] Fix known Find/Replace edge cases, especially regex empty matches.
-- [ ] Fix italic highlighting for single-asterisk emphasis.
-- [ ] Fix header navigation popup closing behavior.
-- [ ] Preserve text selection when moving lines.
-- [ ] Fix duplication behavior for empty lines.
-- [ ] Add overwrite confirmation when saving over an existing file.
-- [ ] Add unsaved-change confirmation for New and Open actions.
-- [ ] Verify keyboard shortcuts across supported platforms.
-- [ ] Add clearer error handling for file read/write failures.
-- [ ] Test undo/redo after formatting, replace, paste, and line movement.
+### Already in place
 
-## Phase 2: UI and Theme Foundation
+#### Core editor
+- [x] Single-window Ruby/Tk editor with undo-capable Tk Text
+- [x] Centralized theme module (Sepia, Dark) + Clam ttk base styling
+- [x] Line-based Markdown highlight: H1–H6, bold, italic, muted markers
+- [x] Find / Replace (forward, backward, wrap, replace, replace all, regex, match case)
+- [x] Header navigation popup (H1–H6)
+- [x] Status bar: words, characters, reading-time estimate, filename, Edit / Read-Only
+- [x] Zoom and adjustable line spacing
+- [x] Go to Line
 
-- [ ] Centralize colors, fonts, spacing, and borders into one application theme system.
-- [ ] Keep Clam as the ttk base while overriding widget styles consistently.
-- [ ] Add subtle gray borders to buttons and controls.
-- [ ] Improve toolbar grouping and spacing.
-- [ ] Improve active and inactive notebook tab styling.
-- [ ] Refine Sepia and Dark themes as first-class themes.
-- [ ] Add a neutral Light theme later.
-- [ ] Restyle scrollbars, comboboxes, dialogs, and status-bar widgets.
-- [ ] Replace the native Tk menu with a custom menu bar and custom popup menus.
-- [ ] Keep the existing Tk Text editor widget for performance.
+#### Editing comfort
+- [x] Bold / italic shortcuts and toolbar actions
+- [x] H1–H6 toolbar insertion
+- [x] List continuation (`-`, `*`, `+`, numbered)
+- [x] Auto-pairing for `*`, `` ` ``, `[]`, `()` with mark tracking
+- [x] Arrow-key skip over Markdown delimiters
+- [x] Move line / block up–down; duplicate line
+- [x] Manual `edit_separator` boundaries around major edits
+- [x] Save As with overwrite confirmation
 
-## Phase 3: Writing Comfort
+#### Safety (baseline)
+- [x] Emergency crash recovery under `~/.markdown_editor_backups/`
+- [x] Atomic backup write; primary + `.bak` rotation
+- [x] Open Recovery Backup menu action
+- [x] Crash handler attempts emergency save before exit
+- [x] Unsaved-changes prompt on Quit
 
-- [ ] Configurable editor font and font size.
-- [ ] Adjustable internal editor padding.
-- [ ] Adjustable line spacing and paragraph spacing.
-- [ ] Comfortable reading-width presets: Narrow, Comfortable, Wide, and Full Width.
-- [ ] Focus mode that hides nonessential UI.
-- [ ] Fullscreen writing mode.
-- [ ] Typewriter mode that keeps the active line near the center.
-- [ ] Configurable word wrap.
-- [ ] Optional first-line indentation for prose.
-- [ ] Better selection, cursor, and current-line visibility.
+#### Engineering
+- [x] Regression suite (Minitest) loadable without GUI
+- [x] CI: Ruby syntax check + regression tests
+- [x] Docs under `doc/` (architecture, event flow, parser, limitations, testing)
 
-## Phase 4: Large-Document Navigation
+### Still rough in v0.2.0 (known gaps)
 
-- [ ] Heading outline sidebar.
-- [ ] Searchable quick-jump-to-heading dialog.
-- [ ] Heading folding.
-- [ ] Fold all and expand all commands.
-- [ ] Fold to heading level.
-- [ ] Back and forward navigation history.
-- [ ] Bookmarks for arbitrary document positions.
-- [ ] Better search-result navigation and match counters.
-- [ ] Go to line improvements.
+- [ ] Find/Replace edge cases (empty regex matches, find-in-selection)
+- [ ] Nested / triple-asterisk emphasis remains limited
+- [ ] Header popup reliability across platforms
+- [ ] Multi-line selection edge cases when moving lines
+- [ ] Unsaved-change confirmation on **New** and **Open** (Quit only today)
+- [ ] Theme and font choices are not persisted across restarts
+- [ ] Multi-tab is UI-only (single tab still)
 
-## Phase 5: Markdown Editing Features
+---
 
-- [ ] Expand syntax highlighting beyond headings, bold, and italic.
-- [ ] Highlight links, images, code, blockquotes, lists, task lists, tables, and horizontal rules.
-- [ ] Styled Raw mode: keep Markdown editable while visually reducing syntax noise.
-- [ ] Smart list continuation for nested and numbered lists.
-- [ ] Improve Markdown auto-pairing and paired-symbol deletion.
-- [ ] Link insertion dialog.
-- [ ] Image insertion helper.
-- [ ] Table creation and editing helper.
-- [ ] Task-list support.
-- [ ] Table-of-contents generation.
-- [ ] Optional footnote support.
+## Near term — stabilize before expanding
 
-## Phase 6: Preview and Split Views
+Goal: make the current surface trustworthy. No big new subsystems until these feel solid.
 
-- [ ] Rendered Markdown preview.
-- [ ] Raw, Styled Raw, and Rendered view types.
-- [ ] Adjustable split panes.
-- [ ] Horizontal and vertical splits.
-- [ ] Multiple splits instead of a fixed two-pane layout.
-- [ ] Multiple views of the same document at different scroll positions.
-- [ ] Save and restore split layouts.
-- [ ] Keep preview rendering debounced and independent from typing.
-- [ ] Synchronize preview position without forcing full-document rendering on every scroll event.
+### Reliability and safety
 
-## Phase 7: Companion Files and Workspaces
+- [ ] Unsaved-change confirmation for New and Open
+- [ ] Clearer file read/write error messages and recovery paths
+- [ ] Systematic undo/redo checks after format, replace, paste, line move
+- [ ] Verify shortcuts on Linux / macOS / Windows (where Tk is available)
+- [ ] Optional idle autosave (separate from crash recovery), with simple on/off
+- [ ] Recovery folder cleanup (manual + optional size/age limits)
 
-- [ ] Recognize companion files using a convention such as `[name]_companion_[number].md`.
-- [ ] Opening a main document can optionally open its companion files.
-- [ ] Allow descriptive companion titles through optional metadata.
-- [ ] Restore companion files into a saved split layout.
-- [ ] Support companion roles such as Characters, Timeline, Research, Worldbuilding, TODO, and Scratchpad.
-- [ ] Keep all companion content as normal Markdown files.
-- [ ] Lazy-load hidden companion files where possible.
+### Editor polish
 
-## Phase 8: Metadata and Note Linking
+- [ ] Harden Find/Replace (empty matches, selection scope, match counter)
+- [ ] Improve italic / mixed-emphasis highlighting within the line-based model
+- [ ] Header popup: reliable outside-click close, keyboard type-ahead if cheap
+- [ ] Preserve selection more consistently on line/block move
+- [ ] Empty-line duplicate behavior remains predictable
 
-- [ ] Optional YAML front matter.
-- [ ] Document titles, types, tags, and companion metadata.
-- [ ] Links between related notes.
-- [ ] Backlinks or related-note navigation.
-- [ ] Workspace restoration metadata.
-- [ ] Keep metadata optional so ordinary Markdown files remain fully usable.
+### UI consistency
 
-## Phase 9: Writer Statistics and Revision Tools
+- [x] Centralize colors, fonts, spacing (Theme module)
+- [x] Keep Clam + explicit ttk style overrides
+- [x] Keep Tk Text as the editing surface
+- [ ] Tighten toolbar grouping and spacing
+- [ ] Restyle dialogs / status / scrollbars for Sepia and Dark consistency
+- [ ] Neutral **Light** theme
+- [ ] Persist last theme (and later: font size, spacing) locally
 
-- [ ] Selection word count.
-- [ ] Session word count.
-- [ ] Daily writing goal.
-- [ ] Character, paragraph, heading, and reading-time statistics.
-- [ ] Word-frequency and repetition analysis.
-- [ ] Average sentence and paragraph length.
-- [ ] Local snapshots.
-- [ ] Version comparison and diff view.
-- [ ] Comments, annotations, and TODO markers.
-- [ ] Writing timer or optional Pomodoro mode.
+---
 
-## Phase 10: Settings and Customization
+## Next — writing comfort
 
-- [ ] Appearance settings: theme, UI font, accent, and interface density.
-- [ ] Editor settings: font, size, line spacing, paragraph spacing, reading width, wrapping, and tabs.
-- [ ] File settings: autosave, encoding, recovery options, session restore, and close confirmations.
-- [ ] Interface settings: toolbar, status bar, focus mode defaults, and outline visibility.
-- [ ] Shortcut viewer and later customizable keybindings.
-- [ ] Save settings locally without cloud requirements.
+Only after near-term stability is in good shape.
 
-## Phase 11: Safety features
+- [x] Runtime font size (zoom) and line spacing
+- [ ] Configurable editor font family (still hardcoded to Noto Sans)
+- [ ] Adjustable editor padding
+- [ ] Reading-width presets: Narrow / Comfortable / Wide / Full
+- [ ] Focus mode (hide nonessential chrome)
+- [ ] Fullscreen writing mode
+- [ ] Typewriter scrolling (active line near center)
+- [ ] Configurable word wrap
+- [ ] Stronger current-line / selection visibility
 
-- [ ] Auto save (and options) -- rotating files, threshold for each files, file slots
-- [ ] Version history
-- [ ] Better crash recovery/crash handling
-- [ ] Force save when issue detected (every time when an error window popup)
-- [ ] Clean up manager (auto clean up, manual clean up)
+---
 
-## Experimental Features
+## Next — large-document navigation
 
-These are optional stress tests for the architecture rather than immediate priorities.
+Supports the “large Markdown” goal without leaving plain files.
 
-- [ ] Command palette.
-- [ ] Multi-cursor editing.
-- [ ] Column or block selection.
-- [ ] Minimap.
-- [ ] Customizable toolbar.
-- [ ] Built-in performance diagnostics.
-- [ ] Workspace manager for multiple document projects.
+- [x] Basic go-to-heading popup
+- [x] Go to line
+- [ ] Heading outline sidebar (lazy, cheap updates)
+- [ ] Searchable quick-jump-to-heading
+- [ ] Heading fold / unfold (and fold-to-level)
+- [ ] Back / forward navigation history
+- [ ] Simple bookmarks
+- [ ] Search match counters and clearer result navigation
 
-## Performance Targets
+---
 
-These targets should be checked after every major subsystem is added.
+## Later — deeper Markdown (still plain text)
 
-- Startup on an HDD: under 10 seconds.
-- Open the current 45,000-word benchmark document: under 4 seconds.
-- Typing in the 45,000-word document: no noticeable delay.
-- Search in the benchmark document: under 1 second.
-- Memory usage: ideally under 50 MB; 200 MB is the warning ceiling.
-- Large preview jump or half-file scroll in Styled Raw/preview mode: visible result within 1 second.
-- Saving a large document should feel immediate.
-- Tab switching, heading folding, menu opening, and resizing should remain responsive.
+Stay line-friendly and performance-aware; avoid a full CommonMark rewrite unless needed.
 
-## Long-Term Identity
+- [x] H1–H6, bold, italic
+- [x] Basic list continuation and auto-pairing
+- [ ] Highlight links, images, inline code, fenced code, blockquotes, lists, task lists, tables, rules
+- [ ] Styled Raw mode (editable Markdown with quieter syntax)
+- [ ] Nested list continuation
+- [ ] Better paired-symbol deletion
+- [ ] Small helpers: link insert, image insert, simple table scaffold
+- [ ] Task-list toggle
+- [ ] TOC generation into the document
+- [ ] Optional footnotes if they stay lightweight
 
-RubykNotte should become a lightweight local Markdown workspace for writers and planners, with:
+---
 
-- Fast handling of very large Markdown documents.
-- As mistake tolerant as possible.
-- Strong heading navigation and folding.
-- Comfortable typography and writing-focused UI.
-- Raw, Styled Raw, and rendered views.
-- Flexible split layouts and companion documents.
-- Plain files, local storage, and no Electron dependency.
+## Later — preview and layout
 
-Features should be added only when they improve writing, planning, editing, safety, navigation, or organization without undermining responsiveness.
+Preview must stay **debounced** and independent of the typing path.
+
+- [ ] Rendered Markdown preview
+- [ ] Raw / Styled Raw / Rendered modes
+- [ ] Simple split (horizontal or vertical)
+- [ ] Optional multiple views of one file (only if memory stays sane)
+- [ ] Save/restore simple layout state locally
+
+---
+
+## Later — writer workflow (local only)
+
+Aligned with planners/writers; still no cloud and no proprietary store.
+
+### Companion files and light workspace
+
+- [ ] Convention such as `[name]_companion_[n].md`
+- [ ] Optional open of companions with a main file
+- [ ] Companion roles as ordinary Markdown (Characters, Timeline, Research, …)
+- [ ] Lazy-load hidden companions when possible
+
+### Optional metadata
+
+- [ ] Optional YAML front matter
+- [ ] Titles / tags only if they never break plain-Markdown usability
+- [ ] Simple related-note links / backlinks **if** they stay file-based and fast
+
+### Stats and revision
+
+- [x] Whole-document word / char / reading-time stats
+- [ ] Selection and session word counts
+- [ ] Optional daily writing goal
+- [ ] Local snapshots (not a full VCS)
+- [ ] Simple diff between snapshots
+- [ ] Lightweight TODO / annotation markers in Markdown itself
+
+### Settings
+
+- [ ] Local settings file (theme, font, spacing, recovery options, confirmations)
+- [ ] Shortcut viewer; customizable bindings only if complexity stays low
+
+---
+
+## Safety roadmap (beyond crash recovery)
+
+Crash recovery in v0.2.0 is a floor, not the ceiling.
+
+- [x] Emergency / idle backup to recovery files
+- [x] Crash-time emergency save attempt
+- [ ] User-facing autosave options (interval, enable/disable)
+- [ ] Optional rotating autosave slots per file
+- [ ] Short local version history for the active file
+- [ ] Recovery cleanup tools
+
+---
+
+## Experimental (explicitly low priority)
+
+Architecture stress tests — not commitments.
+
+- [ ] Command palette
+- [ ] Multi-cursor / column selection
+- [ ] Minimap
+- [ ] Customizable toolbar
+- [ ] Built-in performance diagnostics
+- [ ] Multi-document workspace manager
+
+**Not planned:** Electron, cloud sync as a core feature, or built-in AI assistants.
+
+---
+
+## Performance targets
+
+Re-check after each major subsystem.
+
+| Target | Goal |
+|--------|------|
+| Startup (HDD) | under 10 s |
+| Open ~45k-word document | under 4 s |
+| Typing in that document | no noticeable lag |
+| Search in that document | under 1 s |
+| Memory | prefer under ~200 MB; investigate above that |
+| Save large document | feels immediate |
+| Menus, resize, heading UI | stay responsive |
+
+---
+
+## Long-term identity
+
+RubykNotte should remain a **local Markdown workspace for writers and planners**:
+
+- Fast enough for large plain Markdown files
+- Tolerant of mistakes (undo, recovery, confirmations)
+- Strong heading navigation (and later folding)
+- Comfortable typography and a calm UI
+- Optional preview and simple splits without becoming an IDE
+- Companion notes as normal files beside the main document
+- No Electron, no required cloud, no proprietary lock-in
