@@ -1,57 +1,94 @@
 # Changelog
 
-## Unreleased — `test` branch
+All notable versions of RubykNotte are documented here.
 
-This entry summarizes the changes currently present on the `test` branch compared with `main`.
+Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-### Application and Editing
+---
 
-- Expanded the main Ruby/Tk editor implementation with a more structured application architecture and centralized theme/design configuration.
-- Added or expanded Markdown editing and highlighting support, including headers, bold, italic, and muted Markdown marker styling.
-- Added Find/Replace functionality with forward/backward search, wrap-around behavior, replace-current, Replace All, regex mode, and case-sensitive matching.
-- Added header navigation through a dedicated popup with document header discovery and cursor jumping.
-- Added editing helpers for bold/italic insertion, header insertion, list continuation, line movement, line duplication, and Markdown auto-pairing.
-- Added smarter cursor movement around Markdown delimiter pairs.
-- Added adjustable font zoom and line spacing controls.
-- Added read-only mode and live status information for words, characters, reading time, filename, and editor mode.
-- Added Sepia and Dark theme support with centralized theme colors and widget styling.
-- Added paste-triggered document re-parsing and debounced Markdown parsing/current-header updates.
-- Added file open/save/new-file workflows and improved document state handling.
+## [0.2.0] — 2026-08 — `test`
 
-### Reliability and Safety
+Integration branch for the next release. Builds on **v0.1.0** with reliability, editing, testing, and documentation improvements.
 
-- Added persistent emergency backup/recovery support for modified documents.
-- Added atomic backup writing for recovery data.
-- Added an application-level crash handler that attempts an emergency save before re-raising the exception.
-- Added recovery-oriented handling around application shutdown and editor timers.
+### Added
 
-### Automated Testing and CI
+#### Application and editing
+- Expanded application architecture and centralized theme/design configuration
+- Markdown highlighting extended through **H1–H6** (not only H1/H2)
+- Find/Replace retained and hardened (forward/backward, wrap, replace current, Replace All, regex, match case)
+- Header navigation popup with full H1–H6 discovery
+- Editing helpers: bold/italic insertion, header insertion (H1–H6), list continuation, line movement, line duplication, Markdown auto-pairing with mark tracking
+- Smarter cursor movement around Markdown delimiter pairs
+- Adjustable font zoom and line spacing
+- Read-only mode and live status (words, characters, reading time, filename, editor mode)
+- Sepia and Dark themes with broader widget styling
+- Paste-triggered re-parse and debounced parse / current-header updates
+- File workflows: New, Open, Save, **Save As**, Quit
+- Explicit `edit_separator` usage and cleaner undo boundaries around formatting actions
 
-- Added GitHub Actions CI for Ruby 4.0.5.
-- CI now performs a Ruby syntax check with `ruby -c tknote.rb`.
-- Added a Minitest-based unit/regression suite covering core editor logic and previously identified regressions.
-- Regression coverage includes byte-offset handling, header detection, backward Find wrap-around, italic insertion, empty-line duplication, file opening state, and save-and-quit behavior.
-- Updated the test harness so application classes can be loaded without starting the GUI, without depending on the Ruby/Tk Tile extension being installed on the CI runner, and without executing the application's real GUI entry point.
+#### Reliability and safety
+- Persistent emergency backup/recovery under `~/.markdown_editor_backups/`
+- Atomic backup writes
+- Application-level crash handler that attempts an emergency save before exit
+- Recovery menu entry to open primary or secondary backup
+- Timer cleanup on quit; safer shutdown path when save does not clear modified state
 
-### Documentation
+#### Automated testing and CI
+- GitHub Actions CI (Ruby 4.0.5)
+- Syntax check: `ruby -c tknote.rb`
+- Minitest regression suite loadable without starting the GUI or requiring Tile on the runner
+- Coverage for header detection, backward Find wrap, italic insertion, empty-line duplication, open-file clean state, and save-and-quit behavior
+- Test doubles updated for `reset_auto_close_tracking` and `mark_modified`
 
-- Added architecture documentation describing the application structure and ownership model.
-- Added event-flow documentation covering file operations, editing commands, auto-pairing, parsing, Find/Replace, header navigation, zoom, and theme switching.
-- Added Markdown parser documentation describing syntax detection, tag application, parsing strategy, and current limitations.
-- Added Tk Text widget documentation covering configuration, theming, spacing, read-only behavior, and Markdown tag stacking.
-- Added a structured manual testing guide and regression-test triggers.
-- Added a documented limitations/known-issues reference.
+#### Documentation
+- Architecture, event-flow, Markdown parser, TkText, testing guide, and limitations docs under `doc/`
 
-### Current Limitations / Not Yet Implemented
+### Fixed
+- Regression test failures caused by FakeEditor missing `reset_auto_close_tracking` and EditorPane italic path calling `mark_modified` on nil `@app`
+- Several undo/edit-separator and modified-flag edge cases relative to the v0.1.0 baseline
 
-- Multi-tab support is not implemented yet, despite the current Notebook-based UI structure.
-- Markdown header support and navigation remain limited compared with full Markdown implementations.
-- Some advanced GUI behavior may vary by platform, particularly around popup behavior and native Tk/ttk widgets.
-- Some editing edge cases remain under manual testing, including certain italic/highlighting cases, regex edge cases, selection preservation during line movement, and empty-line duplication behavior.
-- Automatic autosave and long-term version history are future work; the current safety layer is focused on persistent crash/emergency recovery.
+### Still limited / not done
+- Multi-tab support still not implemented (single Notebook tab)
+- Full Markdown (code blocks, links, blockquotes, tables, task lists) still out of scope
+- Some GUI behaviors remain platform-dependent (popups, ttk styling)
+- Automatic periodic autosave and long-term version history are future work; current safety is crash/emergency recovery
 
-### Validation Status
+### Validation
+- CI validates syntax and runs the regression suite on this branch
+- Manual GUI testing is still required for full platform coverage
 
-- The `test` branch is intended as the next integration point for the automated testing system.
-- GitHub Actions is configured to validate syntax and run the regression suite.
-- Manual testing remains required for full GUI behavior and platform-specific Tk behavior.
+---
+
+## [0.1.0] — 2026-08 — `main`
+
+Initial public baseline of the Ruby/Tk Markdown note editor.
+
+### Added
+
+- Single-window Markdown editor built with Ruby and Tk/ttk
+- Centralized theme module (Sepia and Dark) with shared spacing and fonts
+- Line-based Markdown highlighter for **H1**, **H2**, **bold**, and **italic**
+- Find & Replace dialog (forward/backward, wrap, replace current, replace all, regex, match case)
+- Header navigation popup for H1/H2 headings
+- Status bar: words, characters, reading-time estimate, filename, Edit / Read-Only mode
+- Editing helpers: bold/italic shortcuts and toolbar buttons, H1/H2 insert, list continuation, auto-pairing, delimiter-aware arrow movement, line move, line duplicate
+- Zoom and line-spacing controls
+- Read-only toggle
+- Go to Line dialog
+- New / Open / Save / Quit with unsaved-changes prompt on quit
+- Basic regression test harness under `test/` and CI workflow
+
+### Known limitations
+
+- Only one document tab is supported (Notebook UI is present but single-tab)
+- Headers H3–H6 are not highlighted or listed in navigation
+- No crash-recovery backups or autosave
+- No Save As command
+- No overwrite confirmation when choosing an existing path in the Save dialog
+- Undo can clear the entire buffer after Open or heavy editing (see issue #19)
+- No support for code blocks, links, blockquotes, tables, or task lists
+- Header popup and some selection behaviors remain rough on certain platforms
+
+### Notes
+
+This is the stable baseline on `main`. Work beyond this baseline is developed on `test` as **v0.2.0**.
