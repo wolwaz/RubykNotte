@@ -1487,36 +1487,74 @@ class MarkdownEditor
     update_current_header
   end
 
-  def open_recovery_file
-    if File.exist?(@backup_file) && File.size(@backup_file) > 0
-      answer = Tk.messageBox(
-        type: 'yesno', 
-        icon: 'question', 
-        title: 'Open Recovery', 
-        message: 'This will open the recovery backup file in a new Untitled tab. Continue?'
-      )
-      
-      if answer == 'yes'
-        begin
-          content = File.read(@backup_file, encoding: 'UTF-8')
-        rescue => e
-          Tk.messageBox(type: 'ok', icon: 'error', title: "Error Reading Backup", message: e.message)
-          return
-        end
+def open_recovery_file
+  primary_exists = File.exist?(@backup_file) && File.size(@backup_file) > 0
+  bak_file = "#{@backup_file}.bak"
+  secondary_exists = File.exist?(bak_file) && File.size(bak_file) > 0
 
-        new_file
-        @editor.text.value = content
-        @is_modified = true
-        current_text = @notebook.itemcget(@tab_frame, 'text')
-        @notebook.itemconfigure(@tab_frame, text: "* #{current_text}") unless current_text.start_with?('*')
-        @editor.highlighter.parse_entire_document
-        update_header_list
-        update_status_left
-      end
-    else
-      Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data', message: 'No crash recovery data was found.')
-    end
+  if !primary_exists && !secondary_exists
+    Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data', 
+                  message: 'No crash recovery data was found.')
+    return
   end
+
+  # Build the dialog options
+  msg = "Multiple recovery files were found. Which would you like to restore?\n\n"
+  msg += "1. Primary Backup (recovery.md)\n" if primary_exists
+  msg += "    Last modified: #{File.mtime(@backup_file)}\n\n" if primary_exists
+  msg += "2. Secondary Backup (recovery.md.bak)\n" if secondary_exists
+  msg += "    Last modified: #{File.mtime(bak_file)}\n" if secondary_exists
+  msg += "\n(If you only see one option, only one backup exists.)"
+
+  # Ask the user which one to load
+  answer = Tk.messageBox(
+    type: 'ok', 
+    icon: 'question', 
+    title: 'Choose Recovery File',
+    message: msg
+  )
+  # Note: Tk's standard messageBox doesn't support radio buttons well.
+  # In a real Tk app, you'd build a quick TkToplevel dialog for this.
+  # For a simple hack, you could use multiple yes/no prompts, 
+  # or just default to loading the primary, and if it fails/empty, load the secondary.
+
+  # A better simple approach: Ask Yes/No for the .bak file first if it exists
+  chosen_file = nil
+  if primary_exists && secondary_exists
+    # Prompt: "Load primary? (No will load .bak)"
+    ans = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Select Backup', 
+                        message: "Primary backup exists. Do you want to load it?\n(Clicking 'No' will load the .bak file instead)")
+    chosen_file = ans == 'yes' ? @backup_file : bak_file
+  elsif primary_exists
+    chosen_file = @backup_file
+  elsif secondary_exists
+    chosen_file = bak_file
+  end
+
+  return unless chosen_file
+
+  # Load the chosen file
+  answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Open Recovery', 
+                         message: 'This will open the recovery backup file in a new Untitled tab. Continue?')
+  
+  if answer == 'yes'
+    begin
+      content = File.read(chosen_file, encoding: 'UTF-8')
+    rescue => e
+      Tk.messageBox(type: 'ok', icon: 'error', title: "Error Reading Backup", message: e.message)
+      return
+    end
+
+    new_file
+    @editor.text.value = content
+    @is_modified = true
+    current_text = @notebook.itemcget(@tab_frame, 'text')
+    @notebook.itemconfigure(@tab_frame, text: "* #{current_text}") unless current_text.start_with?('*')
+    @editor.highlighter.parse_entire_document
+    update_header_list
+    update_status_left
+  end
+end
 
   def save_file
     if @current_filepath.nil?
