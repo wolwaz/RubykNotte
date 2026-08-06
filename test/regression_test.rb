@@ -6,7 +6,8 @@ require 'tempfile'
 # Load application classes without starting Tk or opening a GUI window.
 source = File.read(File.expand_path('../tknote.rb', __dir__))
 source = source.sub(/\Arequire 'tk'\s*/, '')
-source = source.sub(/\napp = MarkdownEditor\.new\napp\.run\s*\z/, '')
+source = source.sub(/\Arequire 'tkextlib\/tile'\s*/, '')
+source = source.sub(/\n# 5\. APP ENTRY POINT WITH CRASH HANDLER.*\z/m, '')
 
 module Tk
   def self.messageBox(**_kwargs)
@@ -64,6 +65,10 @@ class FakeText
     @cursor = start_offset + string.to_s.length
   end
 
+  def delete(start_index, end_index)
+    replace(start_index, end_index, '')
+  end
+
   def mark_set(mark, index)
     raise ArgumentError, "Unsupported mark #{mark}" unless mark == 'insert'
 
@@ -71,6 +76,8 @@ class FakeText
   end
 
   def see(_index); end
+
+  def edit_separator; end
 
   def tag_add(tag, start_index, end_index)
     return unless tag == 'sel'
@@ -172,6 +179,10 @@ class FakeEditor
     @app = Object.new
     @app.define_singleton_method(:update_header_list) {}
   end
+
+  # Called by MarkdownEditor#open_file / #new_file
+  def reset_auto_close_tracking
+  end
 end
 
 class FakeNotebook
@@ -192,11 +203,7 @@ class MarkdownHighlighterRegressionTest < Minitest::Test
     @highlighter = MarkdownHighlighter.new(@text)
   end
 
-  def test_byte_to_char_offset_clamps_negative_offsets
-    assert_equal 0, @highlighter.byte_to_char_offset('hello', -1)
-  end
-
-  def test_headers_support_levels_one_through_six_without_required_space
+  def test_headers_support_levels_one_through_six
     @text.value = "# One\n## Two\n### Three\n#### Four\n##### Five\n###### Six"
 
     @highlighter.parse_entire_document
@@ -227,7 +234,11 @@ class EditorPaneRegressionTest < Minitest::Test
   def test_italic_without_selection_creates_a_pair_and_places_cursor_inside
     pane = EditorPane.allocate
     text = FakeText.new
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+
     pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
 
     pane.insert_italic
 
@@ -260,6 +271,7 @@ class FileOperationRegressionTest < Minitest::Test
       notebook = FakeNotebook.new
       status_center = FakeLabel.new
       status_left = FakeLabel.new
+      backup_file = File.join(File.dirname(file.path), 'recovery.md')
 
       editor.instance_variable_set(:@editor, fake_editor)
       editor.instance_variable_set(:@notebook, notebook)
@@ -267,8 +279,11 @@ class FileOperationRegressionTest < Minitest::Test
       editor.instance_variable_set(:@status_center, status_center)
       editor.instance_variable_set(:@status_left, status_left)
       editor.instance_variable_set(:@is_modified, true)
+      editor.instance_variable_set(:@backup_file, backup_file)
 
       editor.define_singleton_method(:update_header_list) {}
+      editor.define_singleton_method(:update_current_header) {}
+      editor.define_singleton_method(:rotate_backups) {}
       Tk.define_singleton_method(:getOpenFile) { |**_kwargs| file.path }
 
       editor.open_file

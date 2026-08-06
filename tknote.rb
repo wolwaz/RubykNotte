@@ -1,17 +1,19 @@
 require 'tk'
+require 'tkextlib/tile'
+require 'fileutils'
 
 # ==========================================
 # 0. CENTRALIZED DESIGN SYSTEM
 # ==========================================
 module Theme
   SPACING = {
-    xs: 4, sm: 6, md: 8, lg: 12, xl: 16,
+    xs: 2, sm: 6, md: 8, lg: 12, xl: 16,
     editor_x: 25, editor_y: 20
   }
 
   FONTS = {
     ui: ['Noto Sans', 10],
-    editor: ['Noto Sans', 12] 
+    editor: ['Noto Sans', 12]
   }
 
   THEMES = {
@@ -36,14 +38,12 @@ end
 # 1. MARKDOWN HIGHLIGHTER
 # ==========================================
 class MarkdownHighlighter
+  attr_reader :headers_cache
+
   def initialize(text_widget)
     @text = text_widget
-    @current_headers = []
+    @headers_cache = []
     setup_tags
-  end
-
-  def byte_to_char_offset(str, byte_offset)
-    str.byteslice(0, byte_offset).length
   end
 
   def setup_tags
@@ -53,14 +53,18 @@ class MarkdownHighlighter
     @text.tag_configure('italic', font: [f[0], f[1], 'italic'])
     @text.tag_configure('h1', font: [f[0], f[1] + 6, 'bold'], foreground: '#333333')
     @text.tag_configure('h2', font: [f[0], f[1] + 4, 'bold'], foreground: '#444444')
+    @text.tag_configure('h3', font: [f[0], f[1] + 2, 'bold'], foreground: '#555555')
+    @text.tag_configure('h4', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
+    @text.tag_configure('h5', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
+    @text.tag_configure('h6', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
     @text.tag_raise('md_symbol')
   end
 
   def apply_theme(colors)
     @text.tag_configure('md_symbol', foreground: colors[:md_symbol])
-    @text.tag_configure('h1', foreground: colors[:text_fg])
-    @text.tag_configure('h2', foreground: colors[:text_fg])
-    parse_entire_document
+    (1..6).each do |i|
+      @text.tag_configure("h#{i}", foreground: colors[:text_fg])
+    end
   end
 
   def apply_font_settings(base_font_size)
@@ -69,6 +73,10 @@ class MarkdownHighlighter
     @text.tag_configure('italic', font: [f[0], base_font_size, 'italic'])
     @text.tag_configure('h1', font: [f[0], base_font_size + 6, 'bold'])
     @text.tag_configure('h2', font: [f[0], base_font_size + 4, 'bold'])
+    @text.tag_configure('h3', font: [f[0], base_font_size + 2, 'bold'])
+    @text.tag_configure('h4', font: [f[0], base_font_size + 1, 'bold'])
+    @text.tag_configure('h5', font: [f[0], base_font_size + 1, 'bold'])
+    @text.tag_configure('h6', font: [f[0], base_font_size + 1, 'bold'])
   end
 
   def parse_line(line_num)
@@ -76,34 +84,33 @@ class MarkdownHighlighter
     end_idx = "#{line_num}.end"
     line_text = @text.get(start_idx, end_idx)
 
-    ['h1', 'h2', 'bold', 'italic', 'md_symbol'].each do |tag|
+    ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'md_symbol'].each do |tag|
       @text.tag_remove(tag, start_idx, end_idx)
     end
 
-    if line_text.match(/^#\s+(.*)/)
-      @text.tag_add('h1', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.1")
-    elsif line_text.match(/^##\s+(.*)/)
-      @text.tag_add('h2', start_idx, end_idx)
-      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.2")
+    if m = line_text.match(/^(\#{1,6})\s+(.*)/)
+      hash_count = m[1].length
+      tag = "h#{hash_count}"
+      @text.tag_add(tag, start_idx, end_idx)
+      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.#{hash_count}")
     end
 
     line_text.scan(/\*\*(?!\*)(.+?)(?<!\*)\*\*/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('bold', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 2}")
       @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 2}")
     end
 
-    line_text.scan(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/) do
+    line_text.scan(/(?<!\*)\*([^*]+?)\*(?!\*)/) do
       m = Regexp.last_match
-      content_start = byte_to_char_offset(line_text, m.begin(1))
-      content_end   = byte_to_char_offset(line_text, m.end(1))
-      symbol_start  = byte_to_char_offset(line_text, m.begin(0))
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
 
       @text.tag_add('italic', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 1}")
@@ -122,28 +129,33 @@ class MarkdownHighlighter
     (1..total_lines).each do |line_num|
       parse_line(line_num)
     end
+    rebuild_headers_cache
   end
 
-  def get_headers
-    headers = []
+  def rebuild_headers_cache
+    @headers_cache = []
     total_lines = @text.index('end').split('.')[0].to_i - 1
 
     (1..total_lines).each do |line_num|
       line_text = @text.get("#{line_num}.0", "#{line_num}.end")
-      if line_text.match(/^##\s+(.*)/)
-        headers << { line: line_num, text: "    #{$1.strip}" }
-      elsif line_text.match(/^#\s+(.*)/)
-        headers << { line: line_num, text: $1.strip }
+      if m = line_text.match(/^(\#{1,6})\s+(.*)/)
+        hash_count = m[1].length
+        content = m[2] || ""
+        indent = "    " * (hash_count - 1)
+        @headers_cache << { line: line_num, text: "#{indent}#{content.strip}" }
       end
     end
-    headers
   end
-  
+
+  def get_headers
+    @headers_cache
+  end
+
   def get_current_header_line
     current_line = @text.index('insert').split('.')[0].to_i
     current_header_line = nil
-    
-    get_headers.each do |h|
+
+    @headers_cache.each do |h|
       if h[:line] <= current_line
         current_header_line = h[:line]
       else
@@ -152,11 +164,11 @@ class MarkdownHighlighter
     end
     current_header_line
   end
-  
+
   def get_current_header_text
     line = get_current_header_line
     return nil unless line
-    get_headers.find { |h| h[:line] == line }&.dig(:text)
+    @headers_cache.find { |h| h[:line] == line }&.dig(:text)
   end
 end
 
@@ -168,6 +180,7 @@ class FindReplaceDialog
     @editor = editor
     @text = editor.text
     @root = root
+    @callback_refs = []
 
     @dialog = TkToplevel.new(@root) { title "Find & Replace" }
     @dialog.transient(@root)
@@ -178,7 +191,11 @@ class FindReplaceDialog
 
     build_ui
 
-    @dialog.protocol('WM_DELETE_WINDOW', proc { @dialog.destroy })
+    dialog_close_proc = proc { @dialog.destroy }
+    @callback_refs << dialog_close_proc
+    @dialog.protocol('WM_DELETE_WINDOW', dialog_close_proc)
+    @dialog.grab_set
+    @dialog.focus
     @find_entry.focus
   end
 
@@ -193,44 +210,66 @@ class FindReplaceDialog
   def build_ui
     me = self
 
-    Tk::Tile::Label.new(@dialog) { text "Find:" }.grid(row: 0, column: 0, padx: 10, pady: 10, sticky: 'w')
+    @find_label = Tk::Tile::Label.new(@dialog) { text "Find:" }
+    @find_label.grid(row: 0, column: 0, padx: 10, pady: 10, sticky: 'w')
     @find_entry = Tk::Tile::Entry.new(@dialog) { width 35 }
     @find_entry.grid(row: 0, column: 1, padx: 10, pady: 10, columnspan: 2, sticky: 'ew')
 
-    Tk::Tile::Label.new(@dialog) { text "Replace:" }.grid(row: 1, column: 0, padx: 10, pady: 5, sticky: 'w')
+    @replace_label = Tk::Tile::Label.new(@dialog) { text "Replace:" }
+    @replace_label.grid(row: 1, column: 0, padx: 10, pady: 5, sticky: 'w')
     @replace_entry = Tk::Tile::Entry.new(@dialog) { width 35 }
     @replace_entry.grid(row: 1, column: 1, padx: 10, pady: 5, columnspan: 2, sticky: 'ew')
 
-    Tk::Tile::CheckButton.new(@dialog) { text "Match Case"; variable @match_case }.grid(row: 2, column: 1, padx: 5, pady: 5, sticky: 'w')
-    Tk::Tile::CheckButton.new(@dialog) { text "Regex"; variable @use_regex }.grid(row: 2, column: 2, padx: 5, pady: 5, sticky: 'w')
+    @match_case_cb = Tk::Tile::CheckButton.new(@dialog) { text "Match Case"; variable @match_case }
+    @match_case_cb.grid(row: 2, column: 1, padx: 5, pady: 5, sticky: 'w')
+    @use_regex_cb = Tk::Tile::CheckButton.new(@dialog) { text "Regex"; variable @use_regex }
+    @use_regex_cb.grid(row: 2, column: 2, padx: 5, pady: 5, sticky: 'w')
 
-    btn_frame = Tk::Tile::Frame.new(@dialog)
-    btn_frame.grid(row: 3, column: 0, columnspan: 3, pady: 15)
+    @btn_frame = Tk::Tile::Frame.new(@dialog)
+    @btn_frame.grid(row: 3, column: 0, columnspan: 3, pady: 15)
 
-    Tk::Tile::Button.new(btn_frame) { text "Find Prev"; command proc { me.find(:backward) } }.pack(side: 'left', padx: 5)
-    Tk::Tile::Button.new(btn_frame) { text "Find Next"; command proc { me.find(:forward) } }.pack(side: 'left', padx: 5)
-    Tk::Tile::Button.new(btn_frame) { text "Replace"; command proc { me.replace_current } }.pack(side: 'left', padx: 5)
-    Tk::Tile::Button.new(btn_frame) { text "Replace All"; command proc { me.replace_all } }.pack(side: 'left', padx: 5)
+    find_backward_proc = proc { me.find(:backward) }
+    @callback_refs << find_backward_proc
+    @find_prev_btn = Tk::Tile::Button.new(@btn_frame) { text "Find Prev"; command find_backward_proc }
+    @find_prev_btn.pack(side: 'left', padx: 5)
+
+    find_forward_proc = proc { me.find(:forward) }
+    @callback_refs << find_forward_proc
+    @find_next_btn = Tk::Tile::Button.new(@btn_frame) { text "Find Next"; command find_forward_proc }
+    @find_next_btn.pack(side: 'left', padx: 5)
+
+    replace_current_proc = proc { me.replace_current }
+    @callback_refs << replace_current_proc
+    @replace_btn = Tk::Tile::Button.new(@btn_frame) { text "Replace"; command replace_current_proc }
+    @replace_btn.pack(side: 'left', padx: 5)
+
+    replace_all_proc = proc { me.replace_all }
+    @callback_refs << replace_all_proc
+    @replace_all_btn = Tk::Tile::Button.new(@btn_frame) { text "Replace All"; command replace_all_proc }
+    @replace_all_btn.pack(side: 'left', padx: 5)
 
     @dialog.grid_columnconfigure(1, weight: 1)
 
-    @find_entry.bind('Return', proc { me.find(:forward) })
-    @dialog.bind('Escape', proc { @dialog.destroy })
+    find_entry_return_proc = proc { me.find(:forward) }
+    @callback_refs << find_entry_return_proc
+    @find_entry.bind('Return', find_entry_return_proc)
+
+    dialog_escape_proc = proc { @dialog.destroy }
+    @callback_refs << dialog_escape_proc
+    @dialog.bind('Escape', dialog_escape_proc)
   end
 
   def document_text
     @text.get('1.0', 'end - 1 char')
   end
 
-  def cursor_byte_offset
-    char_count = @text.count('1.0', 'insert', 'chars')
-    char_count = char_count.first if char_count.is_a?(Array)
-    document_text.slice(0, char_count.to_i).bytes.length
+  def cursor_char_offset
+    n = @text.count('1.0', 'insert', 'chars')
+    n = n.first if n.is_a?(Array)
+    (n || 0).to_i
   end
 
-  def byte_offset_to_index(byte_offset)
-    text = document_text
-    char_offset = text.byteslice(0, byte_offset).length
+  def char_offset_to_index(char_offset)
     @text.index("1.0 + #{char_offset} chars")
   end
 
@@ -251,11 +290,11 @@ class FindReplaceDialog
     end
 
     text = document_text
-    byte_offset = cursor_byte_offset
+    char_offset = cursor_char_offset
     m = nil
 
     if direction == :forward
-      m = regex.match(text, byte_offset + 1)
+      m = regex.match(text, char_offset + 1)
       m ||= regex.match(text, 0)
     else
       last_before = nil
@@ -263,14 +302,14 @@ class FindReplaceDialog
       text.scan(regex) do
         cur = Regexp.last_match
         last_overall = cur
-        last_before = cur if cur.begin(0) < byte_offset
+        last_before = cur if cur.begin(0) < char_offset
       end
       m = last_before || last_overall
     end
 
     if m
-      match_start = byte_offset_to_index(m.begin(0))
-      match_end   = byte_offset_to_index(m.end(0))
+      match_start = char_offset_to_index(m.begin(0))
+      match_end   = char_offset_to_index(m.end(0))
       @text.tag_remove('sel', '1.0', 'end')
       @text.tag_add('sel', match_start, match_end)
       @text.mark_set('insert', match_start)
@@ -285,7 +324,9 @@ class FindReplaceDialog
       match_start = @text.index('sel.first')
       match_end   = @text.index('sel.last')
 
+      @text.edit_separator
       @text.replace(match_start, match_end, @replace_entry.value)
+      @text.edit_separator
 
       @editor.highlighter.parse_entire_document
       @editor.app.update_header_list
@@ -311,10 +352,24 @@ class FindReplaceDialog
 
     text = document_text
     replace_count = text.scan(regex).size
-    new_text = text.gsub(regex) { replace_text }
+    
+    cursor_line = @text.index('insert').split('.')[0].to_i
+    first, _last = @text.yview
 
-    first, last = @text.yview
+    if @use_regex.value == '1'
+      new_text = text.gsub(regex, replace_text)
+    else
+      new_text = text.gsub(regex) { replace_text }
+    end
+
+    @text.edit_separator
     @text.replace('1.0', 'end - 1 char', new_text)
+    @text.edit_separator
+
+    total_lines = @text.index('end').split('.')[0].to_i - 1
+    cursor_line = [cursor_line, total_lines].min
+    @text.mark_set('insert', "#{cursor_line}.0")
+
     @text.yview_moveto(first)
 
     @editor.highlighter.parse_entire_document
@@ -328,15 +383,26 @@ end
 # 3. EDITOR PANE
 # ==========================================
 class EditorPane
-  attr_reader :text, :highlighter, :app
+  attr_reader :text, :highlighter, :app, :debounce_timer
+
+  PAIR_OPEN_TO_CLOSE = { '*' => '*', '`' => '`', '[' => ']', '(' => ')' }.freeze
+  SYMMETRIC_PAIR_CHARS = ['*', '`'].freeze
+  PAIR_CLOSER_CHARS = [']', ')'].freeze
 
   def initialize(parent_frame, app)
     @app = app
     @debounce_timer = nil
+    @auto_close_marks = []
+    @auto_close_seq = 0
+    @callback_refs = []
+    
     @text_frame = Tk::Tile::Frame.new(parent_frame)
     @text_frame.pack(fill: 'both', expand: true, padx: 15, pady: 15)
 
-    scroll = Tk::Tile::Scrollbar.new(@text_frame)
+    @scroll = Tk::Tile::Scrollbar.new(@text_frame)
+
+    yscroll_proc = proc { |first, last| @scroll.set(first, last) }
+    @callback_refs << yscroll_proc
 
     @text = TkText.new(@text_frame) {
       width 80
@@ -347,51 +413,138 @@ class EditorPane
       highlightthickness 1
       padx Theme::SPACING[:editor_x]
       pady Theme::SPACING[:editor_y]
-      yscrollcommand proc { |first, last| scroll.set(first, last) }
+      undo true
+      autoseparators false
+      yscrollcommand yscroll_proc
     }
 
-    scroll.pack(side: 'right', fill: 'y')
+    @scroll.pack(side: 'right', fill: 'y')
     @text.pack(side: 'left', fill: 'both', expand: true)
-    text_widget = @text
-    scroll.command proc { |*args| text_widget.yview(*args) }
+    
+    yview_proc = proc { |*args| @text.yview(*args) }
+    @callback_refs << yview_proc
+    @scroll.command yview_proc
 
     @highlighter = MarkdownHighlighter.new(@text)
     setup_shortcuts
   end
 
+  def cancel_timers
+    Tk.after_cancel(@debounce_timer) if @debounce_timer
+  end
+
   def setup_shortcuts
-    @text.bind('Control-s', proc { @app.save_file; 'break' })
-    @text.bind('Control-o', proc { @app.open_file; 'break' })
-    @text.bind('Control-n', proc { @app.new_file; 'break' })
-    @text.bind('Control-q', proc { @app.quit_app; 'break' })
+    ctrl_s = proc { @app.save_file; 'break' }
+    @callback_refs << ctrl_s
+    @text.bind('Control-s', ctrl_s)
 
-    @text.bind('Control-b', proc { insert_bold; 'break' })
-    @text.bind('Control-i', proc { insert_italic; 'break' })
+    ctrl_shift_s = proc { @app.save_as_file; 'break' }
+    @callback_refs << ctrl_shift_s
+    @text.bind('Control-Shift-S', ctrl_shift_s)
 
-    @text.bind('Control-z', proc { @text.undo; 'break' })
-    @text.bind('Control-y', proc { @text.redo; 'break' })
+    ctrl_o = proc { @app.open_file; 'break' }
+    @callback_refs << ctrl_o
+    @text.bind('Control-o', ctrl_o)
 
-    @text.bind('Control-plus', proc { @app.zoom_in; 'break' })
-    @text.bind('Control-equal', proc { @app.zoom_in; 'break' })
-    @text.bind('Control-minus', proc { @app.zoom_out; 'break' })
-    @text.bind('Control-0', proc { @app.reset_zoom; 'break' })
-    @text.bind('Control-Up', proc { move_line_up; 'break' })
-    @text.bind('Control-Down', proc { move_line_down; 'break' })
+    ctrl_n = proc { @app.new_file; 'break' }
+    @callback_refs << ctrl_n
+    @text.bind('Control-n', ctrl_n)
 
-    @text.bind('Control-Shift-D', proc { duplicate_line; 'break' })
+    ctrl_q = proc { @app.quit_app; 'break' }
+    @callback_refs << ctrl_q
+    @text.bind('Control-q', ctrl_q)
 
-    @text.bind('Control-g', proc { @app.goto_line_dialog; 'break' })
-    @text.bind('Control-f', proc { @app.open_find_dialog; 'break' })
+    ctrl_b = proc { insert_bold; 'break' }
+    @callback_refs << ctrl_b
+    @text.bind('Control-b', ctrl_b)
 
-    @text.bind('ButtonRelease-1') { @app.update_current_header }
-    @text.bind('KeyRelease-Up') { @app.update_current_header }
-    @text.bind('KeyRelease-Down') { @app.update_current_header }
-    @text.bind('KeyRelease-Prior') { @app.update_current_header }
-    @text.bind('KeyRelease-Next') { @app.update_current_header }
+    ctrl_i = proc { insert_italic; 'break' }
+    @callback_refs << ctrl_i
+    @text.bind('Control-i', ctrl_i)
 
-    @text.bind('Return', proc { handle_return })
+    ctrl_z = proc { @text.edit_undo rescue nil; 'break' }
+    @callback_refs << ctrl_z
+    @text.bind('Control-z', ctrl_z)
 
-    @text.bind('Right', proc {
+    ctrl_y = proc { @text.edit_redo rescue nil; 'break' }
+    @callback_refs << ctrl_y
+    @text.bind('Control-y', ctrl_y)
+
+    ctrl_shift_z = proc { @text.edit_redo rescue nil; 'break' }
+    @callback_refs << ctrl_shift_z
+    @text.bind('Control-Z', ctrl_shift_z)
+
+    ctrl_a = proc { 
+      @text.tag_add('sel', '1.0', 'end - 1 char')
+      'break' 
+    }
+    @callback_refs << ctrl_a
+    @text.bind('Control-a', ctrl_a)
+
+    ctrl_plus = proc { @app.zoom_in; 'break' }
+    @callback_refs << ctrl_plus
+    @text.bind('Control-plus', ctrl_plus)
+
+    ctrl_equal = proc { @app.zoom_in; 'break' }
+    @callback_refs << ctrl_equal
+    @text.bind('Control-equal', ctrl_equal)
+
+    ctrl_minus = proc { @app.zoom_out; 'break' }
+    @callback_refs << ctrl_minus
+    @text.bind('Control-minus', ctrl_minus)
+
+    ctrl_0 = proc { @app.reset_zoom; 'break' }
+    @callback_refs << ctrl_0
+    @text.bind('Control-0', ctrl_0)
+
+    ctrl_up = proc { move_line_up; 'break' }
+    @callback_refs << ctrl_up
+    @text.bind('Control-Up', ctrl_up)
+
+    ctrl_down = proc { move_line_down; 'break' }
+    @callback_refs << ctrl_down
+    @text.bind('Control-Down', ctrl_down)
+
+    ctrl_shift_d = proc { duplicate_line; 'break' }
+    @callback_refs << ctrl_shift_d
+    @text.bind('Control-Shift-D', ctrl_shift_d)
+
+    ctrl_g = proc { @app.goto_line_dialog; 'break' }
+    @callback_refs << ctrl_g
+    @text.bind('Control-g', ctrl_g)
+
+    ctrl_f = proc { @app.open_find_dialog; 'break' }
+    @callback_refs << ctrl_f
+    @text.bind('Control-f', ctrl_f)
+
+    btn_release_1 = proc { 
+      @text.edit_separator
+      @app.update_current_header 
+    }
+    @callback_refs << btn_release_1
+    @text.bind('ButtonRelease-1', btn_release_1)
+
+    key_release_up = proc { @app.update_current_header }
+    @callback_refs << key_release_up
+    @text.bind('KeyRelease-Up', key_release_up)
+
+    key_release_down = proc { @app.update_current_header }
+    @callback_refs << key_release_down
+    @text.bind('KeyRelease-Down', key_release_down)
+
+    key_release_prior = proc { @app.update_current_header }
+    @callback_refs << key_release_prior
+    @text.bind('KeyRelease-Prior', key_release_prior)
+
+    key_release_next = proc { @app.update_current_header }
+    @callback_refs << key_release_next
+    @text.bind('KeyRelease-Next', key_release_next)
+
+    return_key = proc { handle_return }
+    @callback_refs << return_key
+    @text.bind('Return', return_key)
+
+    right_key = proc {
       next_two = @text.get('insert', 'insert + 2 chars')
       next_one = next_two[0] || ''
       prev_char = @text.get('insert - 1 char', 'insert')
@@ -411,9 +564,11 @@ class EditorPane
       else
         nil
       end
-    })
+    }
+    @callback_refs << right_key
+    @text.bind('Right', right_key)
 
-    @text.bind('Left', proc {
+    left_key = proc {
       prev_two = @text.get('insert - 2 chars', 'insert')
       prev_one = prev_two[-1] || ''
       next_char = @text.get('insert', 'insert + 1 char')
@@ -433,92 +588,129 @@ class EditorPane
       else
         nil
       end
-    })
+    }
+    @callback_refs << left_key
+    @text.bind('Left', left_key)
 
-    @text.bind('KeyPress', proc { |ev|
+    key_press = proc { |ev|
+      unless ev.keysym.nil? || ev.keysym =~ /Shift|Control|Alt|Left|Right|Up|Down|Home|End|Prior|Next/
+        @text.edit_separator
+      end
+
       char = ev.char
-      closing_pairs = { '*' => '*', '`' => '`', '[' => ']', '(' => ')' }
 
-      if closing_pairs.key?(char) && @text.tag_ranges('sel').empty?
-        closing_char = closing_pairs[char]
-        Tk.after(0, proc {
-          @text.insert('insert', closing_char)
-          @text.mark_set('insert', 'insert - 1 char')
-        })
+      if @text.tag_ranges('sel').empty?
+        if PAIR_OPEN_TO_CLOSE.key?(char)
+          closer = PAIR_OPEN_TO_CLOSE[char]
+          next_char = @text.get('insert', 'insert + 1 char')
+
+          if SYMMETRIC_PAIR_CHARS.include?(char) && next_char == closer && consume_auto_close_mark
+            @text.mark_set('insert', 'insert + 1 char')
+            next 'break'
+          else
+            after_proc = proc {
+              @text.insert('insert', closer)
+              register_auto_close_mark
+              @text.mark_set('insert', 'insert - 1 char')
+            }
+            @callback_refs << after_proc
+            Tk.after(0, &after_proc)
+          end
+        elsif PAIR_CLOSER_CHARS.include?(char)
+          next_char = @text.get('insert', 'insert + 1 char')
+          if next_char == char && consume_auto_close_mark
+            @text.mark_set('insert', 'insert + 1 char')
+            next 'break'
+          end
+        end
       end
 
       next if ev.keysym.nil? || ev.keysym =~ /Shift|Control|Alt|Left|Right|Up|Down|Home|End|Prior|Next/
 
-      if !@app.is_modified
-        @app.is_modified = true
-        current_text = @app.notebook.itemcget(@app.tab_frame, 'text')
-        unless current_text.start_with?('*')
-          @app.notebook.itemconfigure(@app.tab_frame, text: "* #{current_text}")
-        end
-      end
-    })
+      @app.last_keypress_time = Time.now
+      @app.mark_modified
+    }
+    @callback_refs << key_press
+    @text.bind('KeyPress', key_press)
 
-    @text.bind('KeyRelease') do
+    key_release = proc { |ev|
       Tk.after_cancel(@debounce_timer) if @debounce_timer
-      @debounce_timer = Tk.after(300, method(:parse_and_update))
+      debounce_proc = proc { parse_and_update }
+      @callback_refs << debounce_proc
+      @debounce_timer = Tk.after(300, &debounce_proc)
+    }
+    @callback_refs << key_release
+    @text.bind('KeyRelease', key_release)
 
-      text_content = @text.value
-      words = text_content.split.size
-      chars = text_content.length
-      minutes = (words / 200.0).ceil
-      time_str = minutes < 1 ? "< 1 min" : "#{minutes} min"
+    ctrl_v = proc {
+      paste_proc = proc { parse_after_paste }
+      @callback_refs << paste_proc
+      Tk.after(100, &paste_proc)
+    }
+    @callback_refs << ctrl_v
+    @text.bind('Control-v', ctrl_v)
+  end
 
-      @app.status_left.text = "Words: #{words} | Chars: #{chars} | Time: #{time_str}"
-    end
-
-    @text.bind('Control-v') do
-      Tk.after(50, method(:parse_after_paste))
+  def register_auto_close_mark
+    name = "autoclose_#{@auto_close_seq += 1}"
+    @text.mark_set(name, 'insert')
+    @text.mark_gravity(name, 'left')
+    @auto_close_marks << name
+    
+    while @auto_close_marks.size > 10
+      old = @auto_close_marks.shift
+      @text.mark_unset(old) if @text.mark_names.include?(old)
     end
   end
 
-  def get_char_offset(index)
-    n = @text.count('1.0', index, 'chars')
-    n = n.first if n.is_a?(Array)
-    n.to_i
+  def consume_auto_close_mark
+    return false if @auto_close_marks.empty?
+    cursor = @text.index('insert')
+    match = @auto_close_marks.find { |m| @text.mark_names.include?(m) && @text.index(m) == cursor }
+    return false unless match
+    @auto_close_marks.delete(match)
+    @text.mark_unset(match)
+    true
+  end
+
+  def reset_auto_close_tracking
+    @auto_close_marks.each { |m| @text.mark_unset(m) if @text.mark_names.include?(m) }
+    @auto_close_marks.clear
   end
 
   def insert_bold
+    @text.edit_separator
     if @text.tag_ranges('sel').any?
-      start_idx = @text.index('sel.first')
-      end_idx = @text.index('sel.last')
-
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
-      @text.insert(start_idx, '**')
-      @text.insert("1.0 + #{end_offset + 2} chars", '**')
-
+      @text.mark_set('temp_sel_end', 'sel.last')
+      @text.insert('sel.last', '**')
+      @text.insert('sel.first', '**')
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 4} chars")
+      @text.mark_set('insert', 'temp_sel_end + 2 chars')
+      @text.mark_unset('temp_sel_end')
     else
       @text.insert('insert', '****')
       @text.mark_set('insert', 'insert - 2 chars')
     end
+    @app.mark_modified
+    @text.edit_separator
     'break'
   end
 
   def insert_italic
+    @text.edit_separator
     if @text.tag_ranges('sel').any?
-      start_idx = @text.index('sel.first')
-      end_idx = @text.index('sel.last')
-
-      start_offset = get_char_offset(start_idx)
-      end_offset = get_char_offset(end_idx)
-
-      @text.insert(start_idx, '*')
-      @text.insert("1.0 + #{end_offset + 1} chars", '*')
-
+      @text.mark_set('temp_sel_end', 'sel.last')
+      @text.insert('sel.last', '*')
+      @text.insert('sel.first', '*')
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', "1.0 + #{end_offset + 2} chars")
+      @text.mark_set('insert', 'temp_sel_end + 1 char')
+      @text.mark_unset('temp_sel_end')
     else
       @text.insert('insert', '**')
       @text.mark_set('insert', 'insert - 1 char')
     end
+    @app.mark_modified
+    @text.edit_separator
     'break'
   end
 
@@ -531,13 +723,18 @@ class EditorPane
       bullet = $2
 
       if line_text.strip == bullet
+        @text.edit_separator
         @text.delete("#{current_line}.0", "#{current_line}.end")
-        return
+        @text.edit_separator
+        return 'break'
       end
 
-      Tk.after(0, proc {
+      return_proc = proc {
         @text.insert('insert', "#{indent}#{bullet} ")
-      })
+        @text.edit_separator
+      }
+      @callback_refs << return_proc
+      Tk.after(0, &return_proc)
       return
     end
 
@@ -546,13 +743,18 @@ class EditorPane
       num = $2.to_i
 
       if line_text.strip == "#{num}."
+        @text.edit_separator
         @text.delete("#{current_line}.0", "#{current_line}.end")
-        return
+        @text.edit_separator
+        return 'break'
       end
 
-      Tk.after(0, proc {
+      return_proc = proc {
         @text.insert('insert', "#{indent}#{num + 1}. ")
-      })
+        @text.edit_separator
+      }
+      @callback_refs << return_proc
+      Tk.after(0, &return_proc)
       return
     end
   end
@@ -560,53 +762,92 @@ class EditorPane
   def parse_after_paste
     @highlighter.parse_entire_document
     @app.update_header_list
-    @app.status_left.text = "Words: #{@text.value.split.size}"
+    @app.update_status_left
   end
 
   def parse_and_update
     @highlighter.parse_current_line
-    @app.update_header_list
+    @highlighter.rebuild_headers_cache
     @app.update_current_header
+    @app.update_status_left
   end
 
   def move_line_up
-    current_line = @text.index('insert').split('.')[0].to_i
+    current_line, current_col = @text.index('insert').split('.').map(&:to_i)
     return if current_line <= 1
 
-    line_text = @text.get("#{current_line}.0", "#{current_line}.end")
-    prev_text = @text.get("#{current_line - 1}.0", "#{current_line - 1}.end")
+    has_selection = @text.tag_ranges('sel').any?
+    if has_selection
+      sel_start = @text.index('sel.first')
+      sel_end = @text.index('sel.last')
+      start_line = sel_start.split('.')[0].to_i
+      end_line = sel_end.split('.')[0].to_i
+      end_line -= 1 if sel_end.split('.')[1].to_i == 0 && end_line > start_line
+    else
+      start_line = end_line = current_line
+    end
 
-    @text.replace("#{current_line - 1}.0", "#{current_line}.end", "#{line_text}\n#{prev_text}")
-    @text.mark_set('insert', "#{current_line - 1}.0")
+    block_text = @text.get("#{start_line}.0", "#{end_line}.end")
+    prev_text = @text.get("#{start_line - 1}.0", "#{start_line - 1}.end")
+
+    @text.edit_separator
+    @text.replace("#{start_line - 1}.0", "#{end_line}.end", "#{block_text}\n#{prev_text}")
+
+    if has_selection
+      @text.tag_add('sel', "#{start_line - 1}.0", "#{start_line - 1}.0 + #{block_text.length} chars")
+    end
+
+    @text.mark_set('insert', "#{current_line - 1}.#{current_col}")
     @text.see('insert')
+    @text.edit_separator
 
-    @highlighter.parse_line(current_line)
-    @highlighter.parse_line(current_line - 1)
+    (start_line - 1).upto(end_line).each { |l| @highlighter.parse_line(l) }
   end
 
   def move_line_down
-    current_line = @text.index('insert').split('.')[0].to_i
+    current_line, current_col = @text.index('insert').split('.').map(&:to_i)
     total_lines = @text.index('end').split('.')[0].to_i - 1
     return if current_line >= total_lines
 
-    line_text = @text.get("#{current_line}.0", "#{current_line}.end")
-    next_text = @text.get("#{current_line + 1}.0", "#{current_line + 1}.end")
+    has_selection = @text.tag_ranges('sel').any?
+    if has_selection
+      sel_start = @text.index('sel.first')
+      sel_end = @text.index('sel.last')
+      start_line = sel_start.split('.')[0].to_i
+      end_line = sel_end.split('.')[0].to_i
+      end_line -= 1 if sel_end.split('.')[1].to_i == 0 && end_line > start_line
+    else
+      start_line = end_line = current_line
+    end
 
-    @text.replace("#{current_line}.0", "#{current_line + 1}.end", "#{next_text}\n#{line_text}")
-    @text.mark_set('insert', "#{current_line + 1}.0")
+    return if end_line >= total_lines
+
+    block_text = @text.get("#{start_line}.0", "#{end_line}.end")
+    next_text = @text.get("#{end_line + 1}.0", "#{end_line + 1}.end")
+
+    @text.edit_separator
+    @text.replace("#{start_line}.0", "#{end_line + 1}.end", "#{next_text}\n#{block_text}")
+
+    if has_selection
+      @text.tag_add('sel', "#{start_line + 1}.0", "#{start_line + 1}.0 + #{block_text.length} chars")
+    end
+
+    @text.mark_set('insert', "#{current_line + 1}.#{current_col}")
     @text.see('insert')
+    @text.edit_separator
 
-    @highlighter.parse_line(current_line)
-    @highlighter.parse_line(current_line + 1)
+    start_line.upto(end_line + 1).each { |l| @highlighter.parse_line(l) }
   end
 
   def duplicate_line
     current_line = @text.index('insert').split('.')[0].to_i
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
 
+    @text.edit_separator
     @text.insert("#{current_line}.end", "\n#{line_text}")
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
+    @text.edit_separator
 
     @highlighter.parse_line(current_line + 1)
   end
@@ -616,11 +857,12 @@ end
 # 4. MAIN APPLICATION
 # ==========================================
 class MarkdownEditor
-  attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme
+  attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme, :last_keypress_time
 
   def initialize
     @root = TkRoot.new { title "Markdown Note App v2 - OOP" }
     Tk::Tile::Style.theme_use('clam')
+    @callback_refs = []
 
     disable_tk_emacs_bindings
 
@@ -629,33 +871,115 @@ class MarkdownEditor
     @root.pack_propagate(false)
 
     @is_modified = false
-    @current_filename = 'New File'
+    @current_filename = 'Untitled.md'
     @current_filepath = nil
     @base_font_size = 12
     @line_spacing = 4
+    @last_keypress_time = Time.now
+    @backup_due_time = nil
 
-    @root.protocol('WM_DELETE_WINDOW', method(:quit_app))
+    @backup_dir = File.join(Dir.home, '.markdown_editor_backups')
+    @backup_file = File.join(@backup_dir, 'recovery.md')
+    Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
+
+    quit_app_proc = proc { quit_app }
+    @callback_refs << quit_app_proc
+    @root.protocol('WM_DELETE_WINDOW', quit_app_proc)
 
     @current_theme = :sepia
     @find_dialog = nil
     @goto_dialog = nil
     @header_popup = nil
+    @header_popup_scroll = nil
+    
+    @popup_close_proc = proc { |ev|
+      return unless @header_popup && @header_popup.exist?
+      rx = @header_popup.winfo_rootx
+      ry = @header_popup.winfo_rooty
+      rw = @header_popup.winfo_width
+      rh = @header_popup.winfo_height
+      x = ev.x_root
+      y = ev.y_root
+      
+      if x < rx || x > rx + rw || y < ry || y > ry + rh
+        close_header_popup
+      end
+    }
+    @callback_refs << @popup_close_proc
+    @root.bind('ButtonPress-1', @popup_close_proc)
 
     setup_ui
     apply_theme
     apply_font_settings
-    
-    @header_menu_var = TkVariable.new('')
+
     update_current_header
+    
+    schedule_next_backup_check(10000)
+  end
+
+  def schedule_next_backup_check(ms)
+    Tk.after_cancel(@backup_check_timer) if @backup_check_timer
+    @backup_check_proc = proc { check_backup }
+    @callback_refs << @backup_check_proc
+    @backup_check_timer = Tk.after(ms, &@backup_check_proc)
+  end
+
+  def check_backup
+    if @is_modified
+      time_since_type = Time.now - (@last_keypress_time || Time.now)
+      
+      if time_since_type > 2
+        perform_background_backup
+        @backup_due_time = nil
+        schedule_next_backup_check(10000)
+      else
+        @backup_due_time ||= Time.now
+        if Time.now - @backup_due_time >= 5
+          perform_background_backup
+          @backup_due_time = nil
+          schedule_next_backup_check(10000)
+        else
+          schedule_next_backup_check(1000)
+        end
+      end
+    else
+      @backup_due_time = nil
+      schedule_next_backup_check(10000)
+    end
+  end
+
+  def perform_background_backup
+    return unless @is_modified
+    begin
+      content = @editor.text.get('1.0', 'end - 1 char')
+      write_backup_atomic(content)
+    rescue => e
+      puts "Background backup failed: #{e.message}"
+    end
+  end
+
+  def write_backup_atomic(content)
+    tmp_file = "#{@backup_file}.tmp"
+    File.write(tmp_file, content, encoding: 'UTF-8')
+    FileUtils.mv(tmp_file, @backup_file, force: true)
   end
 
   def disable_tk_emacs_bindings
-    kill_proc = proc { 'break' }
-    Tk.bind('Text', 'Control-b', kill_proc)
-    Tk.bind('Text', 'Control-i', kill_proc)
-    Tk.bind('Text', 'Control-d', kill_proc)
-    Tk.bind('Text', 'Control-h', kill_proc)
-    Tk.bind('Text', 'Control-k', kill_proc)
+    @emacs_kill_proc = proc { 'break' }
+    @callback_refs << @emacs_kill_proc
+    ['Control-b', 'Control-i', 'Control-k', 'Control-f', 'Control-g', 'Control-s', 'Control-o', 'Control-n', 'Control-q'].each do |key|
+      Tk.bind('Text', key, @emacs_kill_proc)
+    end
+  end
+
+  def mark_modified
+    if !@is_modified
+      @is_modified = true
+      current_text = @notebook.itemcget(@tab_frame, 'text')
+      unless current_text.start_with?('*')
+        @notebook.itemconfigure(@tab_frame, text: "* #{current_text}")
+      end
+    end
   end
 
   def setup_ui
@@ -666,86 +990,194 @@ class MarkdownEditor
     @menubar.pack(fill: 'x')
 
     @file_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
-    @file_menu.add('command', label: 'New', accel: 'Ctrl+N', command: method(:new_file))
-    @file_menu.add('command', label: 'Open...', accel: 'Ctrl+O', command: method(:open_file))
-    @file_menu.add('command', label: 'Save', accel: 'Ctrl+S', command: method(:save_file))
-    @file_menu.add('separator')
-    @file_menu.add('command', label: 'Quit', accel: 'Ctrl+Q', command: method(:quit_app))
 
-    @file_btn = Tk::Tile::Button.new(@menubar)
-    @file_btn.style = 'Menubar.TButton'
-    @file_btn.text = "File"
-    @file_btn.command = proc {
+    new_file_proc = proc { new_file }
+    @callback_refs << new_file_proc
+    @file_menu.add('command', label: 'New', accel: 'Ctrl+N', command: new_file_proc)
+
+    open_file_proc = proc { open_file }
+    @callback_refs << open_file_proc
+    @file_menu.add('command', label: 'Open...', accel: 'Ctrl+O', command: open_file_proc)
+
+    save_file_proc = proc { save_file }
+    @callback_refs << save_file_proc
+    @file_menu.add('command', label: 'Save', accel: 'Ctrl+S', command: save_file_proc)
+
+    save_as_file_proc = proc { save_as_file }
+    @callback_refs << save_as_file_proc
+    @file_menu.add('command', label: 'Save As...', accel: 'Ctrl+Shift+S', command: save_as_file_proc)
+    
+    @file_menu.add('separator')
+
+    open_recovery_file_proc = proc { open_recovery_file }
+    @callback_refs << open_recovery_file_proc
+    @file_menu.add('command', label: 'Open Recovery Backup...', command: open_recovery_file_proc)
+    
+    @file_menu.add('separator')
+
+    quit_app_proc_menu = proc { quit_app }
+    @callback_refs << quit_app_proc_menu
+    @file_menu.add('command', label: 'Quit', accel: 'Ctrl+Q', command: quit_app_proc_menu)
+
+    file_btn_cmd = proc {
       x = @file_btn.winfo_rootx
       y = @file_btn.winfo_rooty + @file_btn.winfo_height
       @file_menu.popup(x, y)
     }
-    @file_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @callback_refs << file_btn_cmd
+    @file_btn = Tk::Tile::Button.new(@menubar) {
+      style 'Menubar.TButton'
+      text "File"
+      command file_btn_cmd
+    }
+    @file_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @edit_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
-    @edit_menu.add('command', label: 'Find / Replace...', accel: 'Ctrl+F', command: method(:open_find_dialog))
 
-    @edit_btn = Tk::Tile::Button.new(@menubar)
-    @edit_btn.style = 'Menubar.TButton'
-    @edit_btn.text = "Edit"
-    @edit_btn.command = proc {
+    open_find_dialog_proc = proc { open_find_dialog }
+    @callback_refs << open_find_dialog_proc
+    @edit_menu.add('command', label: 'Find / Replace...', accel: 'Ctrl+F', command: open_find_dialog_proc)
+
+    edit_btn_cmd = proc {
       x = @edit_btn.winfo_rootx
       y = @edit_btn.winfo_rooty + @edit_btn.winfo_height
       @edit_menu.popup(x, y)
     }
-    @edit_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @callback_refs << edit_btn_cmd
+    @edit_btn = Tk::Tile::Button.new(@menubar) {
+      style 'Menubar.TButton'
+      text "Edit"
+      command edit_btn_cmd
+    }
+    @edit_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @view_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
-    @view_menu.add('command', label: 'Zoom In', accel: 'Ctrl++', command: method(:zoom_in))
-    @view_menu.add('command', label: 'Zoom Out', accel: 'Ctrl+-', command: method(:zoom_out))
-    @view_menu.add('command', label: 'Reset Zoom', accel: 'Ctrl+0', command: method(:reset_zoom))
-    @view_menu.add('separator')
-    @view_menu.add('command', label: 'Increase Spacing', command: proc { change_spacing(2) })
-    @view_menu.add('command', label: 'Decrease Spacing', command: proc { change_spacing(-2) })
-    @view_menu.add('separator')
-    @view_menu.add('command', label: 'Go to Line...', accel: 'Ctrl+G', command: method(:goto_line_dialog))
 
-    @view_btn = Tk::Tile::Button.new(@menubar)
-    @view_btn.style = 'Menubar.TButton'
-    @view_btn.text = "View"
-    @view_btn.command = proc {
+    zoom_in_proc = proc { zoom_in }
+    @callback_refs << zoom_in_proc
+    @view_menu.add('command', label: 'Zoom In', accel: 'Ctrl++', command: zoom_in_proc)
+
+    zoom_out_proc = proc { zoom_out }
+    @callback_refs << zoom_out_proc
+    @view_menu.add('command', label: 'Zoom Out', accel: 'Ctrl+-', command: zoom_out_proc)
+
+    reset_zoom_proc = proc { reset_zoom }
+    @callback_refs << reset_zoom_proc
+    @view_menu.add('command', label: 'Reset Zoom', accel: 'Ctrl+0', command: reset_zoom_proc)
+    
+    @view_menu.add('separator')
+
+    inc_spacing_proc = proc { change_spacing(2) }
+    @callback_refs << inc_spacing_proc
+    @view_menu.add('command', label: 'Increase Spacing', command: inc_spacing_proc)
+
+    dec_spacing_proc = proc { change_spacing(-2) }
+    @callback_refs << dec_spacing_proc
+    @view_menu.add('command', label: 'Decrease Spacing', command: dec_spacing_proc)
+    
+    @view_menu.add('separator')
+
+    goto_line_dialog_proc = proc { goto_line_dialog }
+    @callback_refs << goto_line_dialog_proc
+    @view_menu.add('command', label: 'Go to Line...', accel: 'Ctrl+G', command: goto_line_dialog_proc)
+
+    view_btn_cmd = proc {
       x = @view_btn.winfo_rootx
       y = @view_btn.winfo_rooty + @view_btn.winfo_height
       @view_menu.popup(x, y)
     }
-    @view_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @callback_refs << view_btn_cmd
+    @view_btn = Tk::Tile::Button.new(@menubar) {
+      style 'Menubar.TButton'
+      text "View"
+      command view_btn_cmd
+    }
+    @view_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
 
     @theme_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
-    @theme_menu.add('command', label: 'Sepia', command: proc { @current_theme = :sepia; apply_theme })
-    @theme_menu.add('command', label: 'Dark', command: proc { @current_theme = :dark; apply_theme })
 
-    @theme_btn = Tk::Tile::Button.new(@menubar)
-    @theme_btn.style = 'Menubar.TButton'
-    @theme_btn.text = "Theme"
-    @theme_btn.command = proc {
+    sepia_theme_proc = proc { @current_theme = :sepia; apply_theme }
+    @callback_refs << sepia_theme_proc
+    @theme_menu.add('command', label: 'Sepia', command: sepia_theme_proc)
+
+    dark_theme_proc = proc { @current_theme = :dark; apply_theme }
+    @callback_refs << dark_theme_proc
+    @theme_menu.add('command', label: 'Dark', command: dark_theme_proc)
+
+    theme_btn_cmd = proc {
       x = @theme_btn.winfo_rootx
       y = @theme_btn.winfo_rooty + @theme_btn.winfo_height
       @theme_menu.popup(x, y)
     }
-    @theme_btn.pack(side: 'left', padx: Theme::SPACING[:sm], pady: 2)
+    @callback_refs << theme_btn_cmd
+    @theme_btn = Tk::Tile::Button.new(@menubar) {
+      style 'Menubar.TButton'
+      text "Theme"
+      command theme_btn_cmd
+    }
+    @theme_btn.pack(side: 'left', padx: Theme::SPACING[:xs], pady: 2)
+
+    header_btn_cmd = proc { me.show_header_popup }
+    @callback_refs << header_btn_cmd
+    @header_btn = Tk::Tile::Button.new(@menubar) {
+      style 'Menubar.TButton'
+      text "Headings"
+      command header_btn_cmd
+    }
+    @header_btn.pack(side: 'right', padx: Theme::SPACING[:sm], pady: 2)
 
     @toolbar = Tk::Tile::Frame.new(@root)
     @toolbar.style = 'Toolbar.TFrame'
     @toolbar.pack(fill: 'x')
 
-    Tk::Tile::Button.new(@toolbar) { text "Bold"; style 'Toolbar.TButton'; command me.method(:insert_bold) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "Italic"; style 'Toolbar.TButton'; command me.method(:insert_italic) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "H1"; style 'Toolbar.TButton'; command me.method(:insert_h1) }.pack(side: 'left', padx: Theme::SPACING[:sm])
-    Tk::Tile::Button.new(@toolbar) { text "H2"; style 'Toolbar.TButton'; command me.method(:insert_h2) }.pack(side: 'left', padx: Theme::SPACING[:sm])
+    readonly_btn_cmd = proc { me.toggle_readonly }
+    @callback_refs << readonly_btn_cmd
+    @readonly_btn = Tk::Tile::Button.new(@toolbar) { 
+      text "Read-Only"; 
+      style 'Toolbar.TButton'; 
+      command readonly_btn_cmd 
+    }
+    @readonly_btn.pack(side: 'right', padx: Theme::SPACING[:sm], pady: 2)
 
-    # Removed native TkMenu for headers, replaced with custom popup
-    @header_btn = Tk::Tile::Button.new(@toolbar)
-    @header_btn.style = 'Toolbar.TButton'
-    @header_btn.text = "Headings"
-    @header_btn.command = proc { me.show_header_popup }
-    @header_btn.pack(side: 'right', padx: Theme::SPACING[:sm])
+    bold_btn_cmd = proc { me.insert_bold }
+    @callback_refs << bold_btn_cmd
+    @bold_btn = Tk::Tile::Button.new(@toolbar) { text "B";  style 'Toolbar.TButton'; command bold_btn_cmd }
+    @bold_btn.pack(side: 'left', padx: 1, pady: 2)
 
-    Tk::Tile::Button.new(@toolbar) { text "Read-Only Toggle"; style 'Toolbar.TButton'; command me.method(:toggle_readonly) }.pack(side: 'right', padx: Theme::SPACING[:sm])
+    italic_btn_cmd = proc { me.insert_italic }
+    @callback_refs << italic_btn_cmd
+    @italic_btn = Tk::Tile::Button.new(@toolbar) { text "I";  style 'Toolbar.TButton'; command italic_btn_cmd }
+    @italic_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h1_btn_cmd = proc { me.insert_h1 }
+    @callback_refs << h1_btn_cmd
+    @h1_btn = Tk::Tile::Button.new(@toolbar) { text "H1"; style 'Toolbar.TButton'; command h1_btn_cmd }
+    @h1_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h2_btn_cmd = proc { me.insert_h2 }
+    @callback_refs << h2_btn_cmd
+    @h2_btn = Tk::Tile::Button.new(@toolbar) { text "H2"; style 'Toolbar.TButton'; command h2_btn_cmd }
+    @h2_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h3_btn_cmd = proc { me.insert_h3 }
+    @callback_refs << h3_btn_cmd
+    @h3_btn = Tk::Tile::Button.new(@toolbar) { text "H3"; style 'Toolbar.TButton'; command h3_btn_cmd }
+    @h3_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h4_btn_cmd = proc { me.insert_h4 }
+    @callback_refs << h4_btn_cmd
+    @h4_btn = Tk::Tile::Button.new(@toolbar) { text "H4"; style 'Toolbar.TButton'; command h4_btn_cmd }
+    @h4_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h5_btn_cmd = proc { me.insert_h5 }
+    @callback_refs << h5_btn_cmd
+    @h5_btn = Tk::Tile::Button.new(@toolbar) { text "H5"; style 'Toolbar.TButton'; command h5_btn_cmd }
+    @h5_btn.pack(side: 'left', padx: 1, pady: 2)
+
+    h6_btn_cmd = proc { me.insert_h6 }
+    @callback_refs << h6_btn_cmd
+    @h6_btn = Tk::Tile::Button.new(@toolbar) { text "H6"; style 'Toolbar.TButton'; command h6_btn_cmd }
+    @h6_btn.pack(side: 'left', padx: 1, pady: 2)
 
     @notebook = Tk::Tile::Notebook.new(@root)
     @notebook.pack(fill: 'both', expand: true)
@@ -767,13 +1199,25 @@ class MarkdownEditor
     @editor = EditorPane.new(@tab_frame, self)
   end
 
-  # NEW: Custom dropdown popup for headers with a scrollable listbox
+  def update_status_left
+    text_content = @editor.text.get('1.0', 'end - 1 char')
+    words = text_content.split.size
+    chars = text_content.length
+    minutes = (words / 200.0).ceil
+    time_str = minutes < 1 ? "< 1 min" : "#{minutes} min"
+    @status_left.text = "Words: #{words} | Chars: #{chars} | Time: #{time_str}"
+  end
+
+  def update_header_list
+    @editor.highlighter.rebuild_headers_cache
+    update_current_header
+  end
+
   def show_header_popup
+    close_header_popup
+
     headers = @editor.highlighter.get_headers
     c = Theme::THEMES[@current_theme]
-
-    x = @header_btn.winfo_rootx
-    y = @header_btn.winfo_rooty + @header_btn.winfo_height
 
     @header_popup = TkToplevel.new(@root) do
       overrideredirect true
@@ -781,48 +1225,52 @@ class MarkdownEditor
       relief 'solid'
       background c[:border]
     end
-    @header_popup.geometry("+#{x}+#{y}")
 
-    list_frame = TkFrame.new(@header_popup) { background c[:editor_bg] }.pack(fill: 'both', expand: true)
-    
-    scroll = Tk::Tile::Scrollbar.new(list_frame).pack(side: 'right', fill: 'y')
-    
-    # Limit to 15 visible rows max so it doesn't take up the whole screen
+    @popup_list_frame = TkFrame.new(@header_popup) { background c[:editor_bg] }.pack(fill: 'both', expand: true)
+    @header_popup_scroll = Tk::Tile::Scrollbar.new(@popup_list_frame).pack(side: 'right', fill: 'y')
+    scroll = @header_popup_scroll
+
     visible_rows = [headers.size, 15].min
     visible_rows = 1 if visible_rows == 0
 
-    list = TkListbox.new(list_frame) do
-      font Theme::FONTS[:ui]
-      height visible_rows
-      width 35
-      background c[:editor_bg]
-      foreground c[:text_fg]
-      selectbackground c[:selection]
-      selectforeground c[:text_fg]
-      borderwidth 0
-      highlightthickness 0
-      activestyle 'none'
-      yscrollcommand proc { |first, last| scroll.set(first, last) }
-    end
-    list.pack(side: 'left', fill: 'both', expand: true)
-    scroll.command proc { |*args| list.yview(*args) }
+    header_scroll_set_proc = proc { |first, last| scroll.set(first, last) }
+    @callback_refs << header_scroll_set_proc
+    
+    @popup_list = TkListbox.new(@popup_list_frame, {
+      font: Theme::FONTS[:ui],
+      height: visible_rows,
+      width: 35,
+      background: c[:editor_bg],
+      foreground: c[:text_fg],
+      selectbackground: c[:selection],
+      selectforeground: c[:text_fg],
+      borderwidth: 0,
+      highlightthickness: 0,
+      activestyle: 'none',
+      yscrollcommand: header_scroll_set_proc
+    })
+    @popup_list.pack(side: 'left', fill: 'both', expand: true)
+    
+    list_yview_proc = proc { |*args| @popup_list.yview(*args) }
+    @callback_refs << list_yview_proc
+    scroll.command list_yview_proc
 
     if headers.empty?
-      list.insert('end', 'No Headers Found')
-      list.state = 'disabled'
+      @popup_list.insert('end', 'No Headers Found')
+      @popup_list.state = 'disabled'
     else
       current_header_line = @editor.highlighter.get_current_header_line
       headers.each_with_index do |h, idx|
-        list.insert('end', h[:text])
+        @popup_list.insert('end', h[:text])
         if h[:line] == current_header_line
-          list.selection_set(idx)
-          list.see(idx) # Auto-scroll to the active header
+          @popup_list.selection_set(idx)
+          @popup_list.see(idx)
         end
       end
     end
 
-    jump_proc = proc {
-      sel_indices = list.curselection
+    header_jump_proc = proc {
+      sel_indices = @popup_list.curselection
       if sel_indices && !sel_indices.empty? && !headers.empty?
         sel_idx = sel_indices[0].to_i
         line_num = headers[sel_idx][:line]
@@ -830,49 +1278,174 @@ class MarkdownEditor
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
       end
-      @header_popup.destroy if @header_popup
+      close_header_popup
     }
+    @callback_refs << header_jump_proc
 
-    list.bind('<Return>', jump_proc)
-    list.bind('<Double-Button-1>', jump_proc)
-    list.bind('<Escape>', proc { @header_popup.destroy if @header_popup })
+    @popup_list.bind('Return', header_jump_proc)
+    @popup_list.bind('Double-Button-1', header_jump_proc)
     
-    @header_popup.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
-    list_frame.bind('<Button-1>', proc { @header_popup.destroy if @header_popup })
+    header_escape_proc1 = proc { close_header_popup }
+    @callback_refs << header_escape_proc1
+    @popup_list.bind('Escape', header_escape_proc1)
+    
+    header_escape_proc2 = proc { close_header_popup }
+    @callback_refs << header_escape_proc2
+    @header_popup.bind('Escape', header_escape_proc2)
+
+    Tk.update_idletasks
+    
+    popup_w = @popup_list.winfo_reqwidth + 20
+    popup_h = @popup_list.winfo_reqheight + 4
+
+    screen_w = @root.winfo_screenwidth
+    screen_h = @root.winfo_screenheight
+
+    x = @header_btn.winfo_rootx
+    y = @header_btn.winfo_rooty + @header_btn.winfo_height
+
+    if x + popup_w > screen_w
+      x = screen_w - popup_w - 10
+    end
+    
+    if y + popup_h > screen_h
+      y = screen_h - popup_h - 10
+    end
+
+    x = 10 if x < 10
+    y = 10 if y < 10
+
+    @header_popup.geometry("+#{x}+#{y}")
 
     @header_popup.deiconify
     @header_popup.raise
-    @header_popup.grab
-    list.focus
+    @popup_list.focus
+  end
+
+  def close_header_popup
+    return unless @header_popup && @header_popup.exist?
+
+    if @header_popup_scroll
+      begin
+        @header_popup_scroll.event_generate('ButtonRelease-1')
+      rescue
+      end
+    end
+
+    @header_popup.destroy
+    @header_popup = nil
+    @header_popup_scroll = nil
+    @popup_list = nil
+    @popup_list_frame = nil
   end
 
   def open_find_dialog
-    if @find_dialog && @find_dialog.exist?
-      @find_dialog.focus
-    else
-      @find_dialog = FindReplaceDialog.new(@root, @editor)
+    begin
+      if @find_dialog && @find_dialog.exist?
+        @find_dialog.focus
+        return
+      end
+    rescue TkCallbackBreak, RuntimeError
+      @find_dialog = nil
     end
+    @find_dialog = FindReplaceDialog.new(@root, @editor)
   end
 
   def insert_bold; @editor.insert_bold; end
   def insert_italic; @editor.insert_italic; end
 
-  def insert_h1; @editor.text.insert('insert', "# "); end
-  def insert_h2; @editor.text.insert('insert', "## "); end
+  def insert_h1
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "# ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
+
+  def insert_h2
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "## ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
+
+  def insert_h3
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "### ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
+
+  def insert_h4
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "#### ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
+
+  def insert_h5
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "##### ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
+
+  def insert_h6
+    @editor.text.edit_separator
+    @editor.text.insert('insert linestart', "###### ")
+    line = @editor.text.index('insert').split('.')[0].to_i
+    @editor.highlighter.parse_line(line)
+    @editor.highlighter.rebuild_headers_cache
+    @editor.text.edit_separator
+    mark_modified
+    update_current_header
+    update_status_left
+  end
 
   def toggle_readonly
     if @editor.text.cget('state') == 'normal'
       @editor.text.state = 'disabled'
-      @status_right.text = "Read-Only Mode"
     else
       @editor.text.state = 'normal'
-      @status_right.text = "Edit Mode"
     end
+    update_current_header
+  end
+
+  def rotate_backups
+    return unless File.exist?(@backup_file)
+    bak_file = "#{@backup_file}.bak"
+    FileUtils.mv(@backup_file, bak_file, force: true)
   end
 
   def new_file
+    rotate_backups
     @editor.text.state = 'normal'
     @editor.text.value = ""
+    @editor.reset_auto_close_tracking
     @editor.text.edit_reset
     @editor.text.tag_names.each do |tag|
       @editor.text.tag_remove(tag, '1.0', 'end')
@@ -882,8 +1455,9 @@ class MarkdownEditor
     @current_filepath = nil
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: 0"
-    update_header_list
+    @editor.highlighter.rebuild_headers_cache
+    update_status_left
+    update_current_header
   end
 
   def open_file
@@ -891,35 +1465,105 @@ class MarkdownEditor
     return if filename.nil? || filename.empty?
 
     begin
-      content = File.read(filename)
+      content = File.read(filename, encoding: 'UTF-8')
     rescue => e
       Tk.messageBox(type: 'ok', icon: 'error', title: "Error Opening File", message: e.message)
       return
     end
 
+    rotate_backups
     @editor.text.state = 'normal'
     @editor.text.value = content
+    @editor.reset_auto_close_tracking
+    @editor.text.edit_reset
     @current_filepath = filename
     @current_filename = File.basename(filename)
     @is_modified = false
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: #{@editor.text.value.split.size}"
+    update_status_left
 
     @editor.highlighter.parse_entire_document
-    update_header_list
+    update_current_header
   end
+
+def open_recovery_file
+  primary_exists = File.exist?(@backup_file) && File.size(@backup_file) > 0
+  bak_file = "#{@backup_file}.bak"
+  secondary_exists = File.exist?(bak_file) && File.size(bak_file) > 0
+
+  if !primary_exists && !secondary_exists
+    Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data', 
+                  message: 'No crash recovery data was found.')
+    return
+  end
+
+  # Build the dialog options
+  msg = "Multiple recovery files were found. Which would you like to restore?\n\n"
+  msg += "1. Primary Backup (recovery.md)\n" if primary_exists
+  msg += "    Last modified: #{File.mtime(@backup_file)}\n\n" if primary_exists
+  msg += "2. Secondary Backup (recovery.md.bak)\n" if secondary_exists
+  msg += "    Last modified: #{File.mtime(bak_file)}\n" if secondary_exists
+  msg += "\n(If you only see one option, only one backup exists.)"
+
+  # Ask the user which one to load
+  answer = Tk.messageBox(
+    type: 'ok', 
+    icon: 'question', 
+    title: 'Choose Recovery File',
+    message: msg
+  )
+  # Note: Tk's standard messageBox doesn't support radio buttons well.
+  # In a real Tk app, you'd build a quick TkToplevel dialog for this.
+  # For a simple hack, you could use multiple yes/no prompts, 
+  # or just default to loading the primary, and if it fails/empty, load the secondary.
+
+  # A better simple approach: Ask Yes/No for the .bak file first if it exists
+  chosen_file = nil
+  if primary_exists && secondary_exists
+    # Prompt: "Load primary? (No will load .bak)"
+    ans = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Select Backup', 
+                        message: "Primary backup exists. Do you want to load it?\n(Clicking 'No' will load the .bak file instead)")
+    chosen_file = ans == 'yes' ? @backup_file : bak_file
+  elsif primary_exists
+    chosen_file = @backup_file
+  elsif secondary_exists
+    chosen_file = bak_file
+  end
+
+  return unless chosen_file
+
+  # Load the chosen file
+  answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Open Recovery', 
+                         message: 'This will open the recovery backup file in a new Untitled tab. Continue?')
+  
+  if answer == 'yes'
+    begin
+      content = File.read(chosen_file, encoding: 'UTF-8')
+    rescue => e
+      Tk.messageBox(type: 'ok', icon: 'error', title: "Error Reading Backup", message: e.message)
+      return
+    end
+
+    new_file
+    @editor.text.value = content
+    @is_modified = true
+    current_text = @notebook.itemcget(@tab_frame, 'text')
+    @notebook.itemconfigure(@tab_frame, text: "* #{current_text}") unless current_text.start_with?('*')
+    @editor.highlighter.parse_entire_document
+    update_header_list
+    update_status_left
+  end
+end
 
   def save_file
     if @current_filepath.nil?
-      filename = Tk.getSaveFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
-      return if filename.nil? || filename.empty?
-      @current_filepath = filename
-      @current_filename = File.basename(filename)
+      save_as_file
+      return
     end
 
     begin
-      File.write(@current_filepath, @editor.text.get('1.0', 'end - 1 char'))
+      File.write(@current_filepath, @editor.text.get('1.0', 'end - 1 char'), encoding: 'UTF-8')
     rescue => e
       Tk.messageBox(type: 'ok', icon: 'error', title: "Error Saving File", message: e.message)
       return
@@ -928,7 +1572,22 @@ class MarkdownEditor
     @is_modified = false
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
-    @status_left.text = "Words: #{@editor.text.value.split.size}"
+    update_status_left
+  end
+
+  def save_as_file
+    filename = Tk.getSaveFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
+    return if filename.nil? || filename.empty?
+
+    if File.exist?(filename)
+      answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Overwrite File?',
+                            message: "File '#{File.basename(filename)}' already exists. Overwrite?")
+      return if answer != 'yes'
+    end
+
+    @current_filepath = filename
+    @current_filename = File.basename(filename)
+    save_file
   end
 
   def apply_theme
@@ -939,28 +1598,28 @@ class MarkdownEditor
 
     @editor.text.background(c[:editor_bg])
     @editor.text.foreground(c[:text_fg])
-    @editor.text.configure(insertbackground: c[:text_fg], selectbackground: c[:selection], highlightbackground: c[:border], highlightcolor: c[:border])
+    @editor.text.configure(insertbackground: c[:text_fg], selectbackground: c[:selection], selectforeground: c[:text_fg], highlightbackground: c[:border], highlightcolor: c[:border])
 
     Tk::Tile::Style.configure('TFrame', background: c[:window_bg])
     Tk::Tile::Style.configure('Toolbar.TFrame', background: c[:toolbar_bg])
     Tk::Tile::Style.configure('Status.TFrame', background: c[:status_bg])
     Tk::Tile::Style.configure('Tab.TFrame', background: c[:window_bg])
 
-    Tk::Tile::Style.configure('TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:sm]}")
+    Tk::Tile::Style.configure('TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:xs]} #{Theme::SPACING[:xs]}")
     Tk::Tile::Style.map('TButton',
       background: [:active, c[:button_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:accent]],
       foreground: [:active, c[:text_fg]]
     )
 
-    Tk::Tile::Style.configure('Toolbar.TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:sm]}")
+    Tk::Tile::Style.configure('Toolbar.TButton', font: ui_font, background: c[:button_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: '1 2')
     Tk::Tile::Style.map('Toolbar.TButton',
       background: [:active, c[:button_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:accent]],
       foreground: [:active, c[:text_fg]]
     )
 
-    Tk::Tile::Style.configure('Menubar.TButton', font: ui_font, background: c[:toolbar_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:md]} #{Theme::SPACING[:xs]}")
+    Tk::Tile::Style.configure('Menubar.TButton', font: ui_font, background: c[:toolbar_bg], foreground: c[:text_fg], borderwidth: 1, relief: 'solid', focusthickness: 0, padding: "#{Theme::SPACING[:xs]} #{Theme::SPACING[:xs]}")
     Tk::Tile::Style.map('Menubar.TButton',
       background: [:active, c[:menu_hover], :pressed, c[:button_pressed]],
       bordercolor: [:active, c[:border], :focus, c[:border]],
@@ -1000,24 +1659,18 @@ class MarkdownEditor
     f = Theme::FONTS[:editor]
     @editor.text.configure(font: [f[0], @base_font_size], spacing1: @line_spacing, spacing2: @line_spacing, spacing3: @line_spacing)
     @editor.highlighter.apply_font_settings(@base_font_size)
-    @editor.highlighter.parse_entire_document
-  end
-
-  def update_header_list
-    update_current_header
   end
 
   def update_current_header
     header_text = @editor.highlighter.get_current_header_text
-    current_line = @editor.highlighter.get_current_header_line
-    
+    mode_text = @editor.text.cget('state') == 'normal' ? "Edit Mode" : "Read-Only Mode"
+    @status_right.text = mode_text
+
     if header_text
       display_text = header_text.length > 30 ? header_text[0..27] + "..." : header_text
       @header_btn.text = display_text
-      @header_menu_var.value = current_line.to_s if current_line
     else
       @header_btn.text = "Headings"
-      @header_menu_var.value = ""
     end
   end
 
@@ -1037,32 +1690,57 @@ class MarkdownEditor
   end
 
   def goto_line_dialog
-    if @goto_dialog && @goto_dialog.exist?
-      @goto_dialog.focus
-      return
+    begin
+      if @goto_dialog && @goto_dialog.exist?
+        @goto_dialog.focus
+        return
+      end
+    rescue TkCallbackBreak, RuntimeError
+      @goto_dialog = nil
     end
 
     @goto_dialog = TkToplevel.new(@root) { title "Go to Line" }
     @goto_dialog.transient(@root)
     @goto_dialog.geometry("300x100")
+    @goto_dialog.grab_set
 
-    Tk::Tile::Label.new(@goto_dialog) { text "Enter line number:" }.pack(pady: 10)
-    entry = Tk::Tile::Entry.new(@goto_dialog) { width 20 }
-    entry.pack(pady: 5)
-    entry.focus
+    @goto_label = Tk::Tile::Label.new(@goto_dialog) { text "Enter line number:" }
+    @goto_label.pack(pady: 10)
+    @goto_entry = Tk::Tile::Entry.new(@goto_dialog) { width 20 }
+    @goto_entry.pack(pady: 5)
+    @goto_entry.focus
 
-    jump_command = lambda {
-      line_num = entry.value.to_i
-      if line_num > 0
+    goto_jump_proc = proc {
+      begin
+        line_num = Integer(@goto_entry.value)
+        total_lines = @editor.text.index('end').split('.')[0].to_i - 1
+
+        if line_num < 1
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: 'Line number must be at least 1')
+          @goto_entry.focus
+          next
+        end
+
+        if line_num > total_lines
+          Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Line', message: "Line number must be at most #{total_lines}")
+          @goto_entry.focus
+          next
+        end
+
         @editor.text.mark_set('insert', "#{line_num}.0")
         @editor.text.see("#{line_num}.0")
         @editor.text.focus
+        @goto_dialog.destroy
+      rescue ArgumentError
+        Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Input', message: 'Please enter a valid number')
+        @goto_entry.focus
       end
-      @goto_dialog.destroy
     }
+    @callback_refs << goto_jump_proc
 
-    entry.bind('Return', jump_command)
-    Tk::Tile::Button.new(@goto_dialog) { text "Go"; command jump_command }.pack(pady: 5)
+    @goto_entry.bind('Return', goto_jump_proc)
+    @goto_btn = Tk::Tile::Button.new(@goto_dialog) { text "Go"; command goto_jump_proc }
+    @goto_btn.pack(pady: 5)
   end
 
   def change_spacing(amount)
@@ -1075,13 +1753,25 @@ class MarkdownEditor
       answer = Tk.messageBox(type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes', message: 'You have unsaved changes. Do you want to save before quitting?')
       if answer == 'yes'
         save_file
-        @root.destroy if !@is_modified
-      elsif answer == 'no'
-        @root.destroy
+        if @is_modified
+          return
+        end
+      elsif answer == 'cancel'
+        return
       end
-    else
-      @root.destroy
     end
+
+    Tk.after_cancel(@backup_check_timer) if @backup_check_timer
+    @editor.cancel_timers if @editor
+    
+    @root.destroy
+  end
+
+  def emergency_save!
+    return unless @editor && @editor.text
+    return unless @is_modified
+    content = @editor.text.get('1.0', 'end - 1 char')
+    write_backup_atomic(content)
   end
 
   def run
@@ -1089,5 +1779,29 @@ class MarkdownEditor
   end
 end
 
-app = MarkdownEditor.new
-app.run
+# ==========================================
+# 5. APP ENTRY POINT WITH CRASH HANDLER
+# ==========================================
+
+# Raise exceptions for signals so they propagate cleanly to the rescue block
+Signal.trap('SIGINT') { raise Interrupt }
+Signal.trap('SIGTERM') { raise SignalException.new('SIGTERM') }
+
+app = nil
+begin
+  app = MarkdownEditor.new
+  app.run
+rescue Exception => e
+  is_exit = e.is_a?(SystemExit) || e.is_a?(Interrupt) || e.is_a?(SignalException)
+  puts "Application Crashed: #{e.message}" unless is_exit
+  puts e.backtrace unless is_exit
+  
+  begin
+    app.emergency_save! if app
+  rescue => inner_e
+    puts "Failed to save recovery file: #{inner_e.message}"
+  end
+  
+  Tk.exit rescue nil
+  raise
+end
