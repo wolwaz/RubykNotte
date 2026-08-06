@@ -7,7 +7,7 @@ require 'tempfile'
 source = File.read(File.expand_path('../tknote.rb', __dir__))
 source = source.sub(/\Arequire 'tk'\s*/, '')
 source = source.sub(/\Arequire 'tkextlib\/tile'\s*/, '')
-source = source.sub(/\napp = MarkdownEditor\.new\napp\.run\s*\z/, '')
+source = source.sub(/\n# 5\. APP ENTRY POINT WITH CRASH HANDLER.*\z/m, '')
 
 module Tk
   def self.messageBox(**_kwargs)
