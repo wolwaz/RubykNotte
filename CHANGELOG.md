@@ -6,9 +6,9 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.0] — 2026-08 — `test`
+## [0.2.0] — 2026-08 — `main`
 
-Integration branch for the next release. Builds on **v0.1.0** with reliability, editing, testing, and documentation improvements.
+Promoted from the `test` integration branch. Builds on **v0.1.0** with reliability, editing, testing, and documentation improvements.
 
 ### Added
 
@@ -54,12 +54,12 @@ Integration branch for the next release. Builds on **v0.1.0** with reliability, 
 - Automatic periodic autosave and long-term version history are future work; current safety is crash/emergency recovery
 
 ### Validation
-- CI validates syntax and runs the regression suite on this branch
+- CI validates syntax and runs the regression suite
 - Manual GUI testing is still required for full platform coverage
 
 ---
 
-## [0.1.0] — 2026-08 — `main`
+## [0.1.0] — 2026-08
 
 Initial public baseline of the Ruby/Tk Markdown note editor.
 
@@ -85,10 +85,6 @@ Initial public baseline of the Ruby/Tk Markdown note editor.
 - No crash-recovery backups or autosave
 - No Save As command
 - No overwrite confirmation when choosing an existing path in the Save dialog
-- Undo is still not doing well
+- Undo could clear the entire buffer after Open or heavy editing (see issue #19)
 - No support for code blocks, links, blockquotes, tables, or task lists
 - Header popup and some selection behaviors remain rough on certain platforms
-
-### Notes
-
-This is the stable baseline on `main`. Work beyond this baseline is developed on `test` as **v0.2.0**.

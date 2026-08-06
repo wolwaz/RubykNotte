@@ -4,10 +4,7 @@
 
 A lightweight Markdown note editor written in pure Ruby + Tk.
 
-| Branch | Version | Role |
-|--------|---------|------|
-| `main` | **v0.1.0** | Stable baseline |
-| `test` | **v0.2.0** (this branch) | Next integration release |
+**Current release: v0.2.0** (`main`)
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -32,7 +29,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 ruby tknote.rb
 ```
 
-## Features (v0.2.0 / `test`)
+## Features (v0.2.0)
 
 ### Core
 - **Markdown highlighting** — H1–H6, bold (`**...**`), italic (`*...*`)
