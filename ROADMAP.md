@@ -131,10 +131,17 @@ The priorities are:
 
 - [ ] Appearance settings: theme, UI font, accent, and interface density.
 - [ ] Editor settings: font, size, line spacing, paragraph spacing, reading width, wrapping, and tabs.
-- [ ] File settings: autosave, encoding, default extension, session restore, and close confirmations.
+- [ ] File settings: autosave, encoding, recovery options, session restore, and close confirmations.
 - [ ] Interface settings: toolbar, status bar, focus mode defaults, and outline visibility.
 - [ ] Shortcut viewer and later customizable keybindings.
 - [ ] Save settings locally without cloud requirements.
+
+## Phase 11: Safety features
+
+- [ ] Auto save (and options)
+- [ ] Version history
+- [ ] Better crash recovery/crash handling
+- [ ] Force save when issue detected
 
 ## Experimental Features
 
@@ -157,7 +164,7 @@ These targets should be checked after every major subsystem is added.
 - Open the current 45,000-word benchmark document: under 4 seconds.
 - Typing in the 45,000-word document: no noticeable delay.
 - Search in the benchmark document: under 1 second.
-- Memory usage: ideally under 200 MB; 500 MB is the warning ceiling.
+- Memory usage: ideally under 50 MB; 200 MB is the warning ceiling.
 - Large preview jump or half-file scroll in Styled Raw/preview mode: visible result within 1 second.
 - Saving a large document should feel immediate.
 - Tab switching, heading folding, menu opening, and resizing should remain responsive.
@@ -167,6 +174,7 @@ These targets should be checked after every major subsystem is added.
 RubykNotte should become a lightweight local Markdown workspace for writers and planners, with:
 
 - Fast handling of very large Markdown documents.
+- As mistake tolerant as possible
 - Strong heading navigation and folding.
 - Comfortable typography and writing-focused UI.
 - Raw, Styled Raw, and rendered views.
