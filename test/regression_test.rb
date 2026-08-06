@@ -6,6 +6,7 @@ require 'tempfile'
 # Load application classes without starting Tk or opening a GUI window.
 source = File.read(File.expand_path('../tknote.rb', __dir__))
 source = source.sub(/\Arequire 'tk'\s*/, '')
+source = source.sub(/\Arequire 'tkextlib\/tile'\s*/, '')
 source = source.sub(/\napp = MarkdownEditor\.new\napp\.run\s*\z/, '')
 
 module Tk
