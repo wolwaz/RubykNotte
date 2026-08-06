@@ -58,19 +58,13 @@ ruby tknote.rb
 
 ## Known issues (v0.1.0)
 
-- Undo can wipe the buffer back to blank (especially after Open) — tracked as [#19](https://github.com/wolwaz/RubykNotte/issues/19)
-- Only H1 and H2 are recognized for highlighting and the Headings popup
+- Undo still not doing well
 - Header popup behavior can be flaky on some platforms
 - Line move does not preserve multi-line selections well
 - No confirmation when saving over an existing file path chosen via Save dialog
 - Italic / nested emphasis edge cases
 
 ## Development branches
-
-| Branch | Role |
-|--------|------|
-| `main` | Stable baseline — **v0.1.0** |
-| `test` | Integration / next release work — see CHANGELOG for **v0.2.0** changes |
 
 ## License
 
