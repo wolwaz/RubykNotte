@@ -138,10 +138,11 @@ The priorities are:
 
 ## Phase 11: Safety features
 
-- [ ] Auto save (and options)
+- [ ] Auto save (and options) -- rotating files, threshold for each files, file slots
 - [ ] Version history
 - [ ] Better crash recovery/crash handling
-- [ ] Force save when issue detected
+- [ ] Force save when issue detected (every time when an error window popup)
+- [ ] Clean up manager (auto clean up, manual clean up)
 
 ## Experimental Features
 
