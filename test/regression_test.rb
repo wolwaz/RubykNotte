@@ -179,6 +179,10 @@ class FakeEditor
     @app = Object.new
     @app.define_singleton_method(:update_header_list) {}
   end
+
+  # Called by MarkdownEditor#open_file / #new_file
+  def reset_auto_close_tracking
+  end
 end
 
 class FakeNotebook
@@ -230,7 +234,11 @@ class EditorPaneRegressionTest < Minitest::Test
   def test_italic_without_selection_creates_a_pair_and_places_cursor_inside
     pane = EditorPane.allocate
     text = FakeText.new
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+
     pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
 
     pane.insert_italic
 
@@ -274,6 +282,8 @@ class FileOperationRegressionTest < Minitest::Test
       editor.instance_variable_set(:@backup_file, backup_file)
 
       editor.define_singleton_method(:update_header_list) {}
+      editor.define_singleton_method(:update_current_header) {}
+      editor.define_singleton_method(:rotate_backups) {}
       Tk.define_singleton_method(:getOpenFile) { |**_kwargs| file.path }
 
       editor.open_file
