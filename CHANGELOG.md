@@ -85,7 +85,7 @@ Initial public baseline of the Ruby/Tk Markdown note editor.
 - No crash-recovery backups or autosave
 - No Save As command
 - No overwrite confirmation when choosing an existing path in the Save dialog
-- Undo can clear the entire buffer after Open or heavy editing (see issue #19)
+- Undo is still not doing well
 - No support for code blocks, links, blockquotes, tables, or task lists
 - Header popup and some selection behaviors remain rough on certain platforms
 
