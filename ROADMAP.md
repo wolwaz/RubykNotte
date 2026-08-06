@@ -152,7 +152,6 @@ These are optional stress tests for the architecture rather than immediate prior
 - [ ] Column or block selection.
 - [ ] Minimap.
 - [ ] Customizable toolbar.
-- [ ] Ruby-based plugin API.
 - [ ] Built-in performance diagnostics.
 - [ ] Workspace manager for multiple document projects.
 
@@ -174,11 +173,11 @@ These targets should be checked after every major subsystem is added.
 RubykNotte should become a lightweight local Markdown workspace for writers and planners, with:
 
 - Fast handling of very large Markdown documents.
-- As mistake tolerant as possible
+- As mistake tolerant as possible.
 - Strong heading navigation and folding.
 - Comfortable typography and writing-focused UI.
 - Raw, Styled Raw, and rendered views.
 - Flexible split layouts and companion documents.
 - Plain files, local storage, and no Electron dependency.
 
-Features should be added only when they improve writing, planning, editing, navigation, or organization without undermining responsiveness.
+Features should be added only when they improve writing, planning, editing, safety, navigation, or organization without undermining responsiveness.
