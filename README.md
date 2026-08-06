@@ -1,10 +1,10 @@
 # RubykNotte
 
-**Disclaimer, this app is vibe coded entirely, and I have no idea what I'm even doing**
+**Disclaimer: this app is vibe-coded. Expect rough edges.**
 
-**Also, its broken as hell**
+A lightweight Markdown note editor written in pure Ruby + Tk.
 
-A lightweight Markdown editor written in pure Ruby + Tk.
+**Current release on `main`: v0.1.0**
 
 ## Goals
 
@@ -14,40 +14,64 @@ A lightweight Markdown editor written in pure Ruby + Tk.
 - Pure Ruby
 - Pure Tk
 - No Electron
-- Large document support
+- Large document support (aspirational)
 
-## Features
+## Requirements
 
-### Core Features (Stable)
-- **Markdown highlighting** - Headers (`#`, `##`), bold (`**bold**`), italic (`*italic*`), and markdown symbols
-- **Find/Replace** - Search forward/backward, replace current, replace all (with regex and case-sensitive options)
-- **Themes** - Sepia and Dark themes with customizable colors
-- **Header navigation** - Dropdown popup for jumping to headers in the document
-- **Word statistics** - Real-time word count, character count, and estimated reading time
-- **Line spacing** - Adjustable line spacing for better readability
+- Ruby with the `tk` extension available
+- Tk / ttk (Tile) installed on the system
 
-### Editing Features (Stable)
-- **Basic editing** - Standard text editing with undo/redo support
-- **Bold/Italic shortcuts** - `Ctrl+B` for bold, `Ctrl+I` for italic
-- **Header insertion** - `Ctrl+H1`/`Ctrl+H2` (via toolbar) for quick header formatting
-- **List continuation** - Auto-continues numbered and bulleted lists on Enter
-- **Auto-pairing** - Automatically closes `*`, `` ` ``, `[ ]`, and `( )` pairs
-- **Smart cursor movement** - Skip over markdown symbols when navigating with arrow keys
-- **Line manipulation** - Move line up/down (`Ctrl+Up/Down`), duplicate line (`Ctrl+Shift+D`)
+## Run
 
-### Advanced Features (Needs Testing)
-- **Read-Only Mode** - Toggle read-only state for the editor (via toolbar button)
-- **Zoom In/Out** - Adjust font size with `Ctrl++`/`Ctrl+-` (reset with `Ctrl+0`)
-- **Go to Line** - Jump to a specific line number (`Ctrl+G`)
-- **Multi-tab support** - Notebook interface for multiple documents (basic implementation) -- Not implemented yet
-- **Paste handling** - Syntax highlighting updates after pasting
-- **Real-time preview** - Live updating of header list and current header display
+```bash
+ruby tknote.rb
+```
 
-### Known Issues
-- Italic text highlighting may not work correctly with single asterisks (`*text*`)
-- Find/Replace regex mode may have edge cases with empty matches
-- Header navigation popup may not close properly on all platforms
-- Line movement (up/down) does not preserve text selection
-- Duplicating empty lines may create extra blank lines
-- No confirmation dialog when overwriting existing files on save
-- Header navigation popup still not working as intended
+## Features (v0.1.0 / `main`)
+
+### Core
+- **Markdown highlighting** — H1 (`#`), H2 (`##`), bold (`**...**`), italic (`*...*`)
+- **Find / Replace** — forward & backward search, replace current, replace all; optional regex and match-case
+- **Themes** — Sepia and Dark
+- **Header navigation** — popup list of H1/H2 headings; click or Enter to jump
+- **Status bar** — word count, character count, estimated reading time, filename, Edit/Read-Only mode
+
+### Editing
+- Bold / Italic via toolbar or `Ctrl+B` / `Ctrl+I`
+- H1 / H2 insertion via toolbar
+- List continuation for `-`, `*`, `+`, and numbered lists on Enter
+- Auto-pairing for `*`, `` ` ``, `[]`, `()`
+- Arrow-key skip over Markdown delimiters
+- Move line up/down (`Ctrl+Up` / `Ctrl+Down`), duplicate line (`Ctrl+Shift+D`)
+- Zoom (`Ctrl++` / `Ctrl+-` / `Ctrl+0`) and adjustable line spacing
+- Read-only toggle
+- Go to line (`Ctrl+G`)
+- New / Open / Save / Quit with unsaved-changes prompt on quit
+
+### Not implemented yet
+- Multi-tab editing (UI uses a Notebook with a single tab)
+- H3–H6 highlighting and navigation
+- Crash recovery / autosave backups
+- Save As
+- Overwrite confirmation on Save
+- Code blocks, links, blockquotes, tables, task lists
+
+## Known issues (v0.1.0)
+
+- Undo can wipe the buffer back to blank (especially after Open) — tracked as [#19](https://github.com/wolwaz/RubykNotte/issues/19)
+- Only H1 and H2 are recognized for highlighting and the Headings popup
+- Header popup behavior can be flaky on some platforms
+- Line move does not preserve multi-line selections well
+- No confirmation when saving over an existing file path chosen via Save dialog
+- Italic / nested emphasis edge cases
+
+## Development branches
+
+| Branch | Role |
+|--------|------|
+| `main` | Stable baseline — **v0.1.0** |
+| `test` | Integration / next release work — see CHANGELOG for **v0.2.0** changes |
+
+## License
+
+See [LICENSE](LICENSE).
