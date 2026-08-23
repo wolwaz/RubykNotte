@@ -13,25 +13,35 @@ module Tk
   def self.messageBox(**_kwargs)
     'ok'
   end
+
+  def self.after(_ms, *_args, **_kwargs)
+    nil
+  end
+
+  def self.after_cancel(_id)
+    nil
+  end
 end
 
 Object.class_eval(source, __FILE__, 1)
 
 class FakeText
   attr_accessor :state
-  attr_reader :value, :cursor
+  attr_reader :value, :cursor, :applied_tags
 
   def initialize(value = '')
     @value = value
     @cursor = 0
     @selection = nil
     @state = 'normal'
+    @applied_tags = []
   end
 
   def value=(new_value)
     @value = new_value.to_s
     @cursor = 0
     @selection = nil
+    @applied_tags = []
   end
 
   def get(start_index, end_index)
@@ -80,13 +90,16 @@ class FakeText
   def edit_separator; end
 
   def tag_add(tag, start_index, end_index)
+    @applied_tags << [tag, start_index.to_s, end_index.to_s]
     return unless tag == 'sel'
 
     @selection = [offset_for(start_index), offset_for(end_index)]
   end
 
-  def tag_remove(tag, _start_index, _end_index)
+  def tag_remove(tag, start_index, end_index)
     @selection = nil if tag == 'sel'
+    line = start_index.to_s.split('.').first
+    @applied_tags.reject! { |name, start, _finish| name == tag && start.split('.').first == line }
   end
 
   def tag_ranges(tag)
@@ -96,7 +109,7 @@ class FakeText
   end
 
   def tag_names
-    []
+    @applied_tags.map(&:first).uniq
   end
 
   def edit_reset; end
@@ -116,6 +129,10 @@ class FakeText
   end
 
   def yview_moveto(_position); end
+
+  def tagged?(name)
+    @applied_tags.any? { |tag, _start, _finish| tag == name }
+  end
 
   private
 
@@ -180,7 +197,6 @@ class FakeEditor
     @app.define_singleton_method(:update_header_list) {}
   end
 
-  # Called by MarkdownEditor#open_file / #new_file
   def reset_auto_close_tracking
   end
 end
@@ -209,6 +225,31 @@ class MarkdownHighlighterRegressionTest < Minitest::Test
     @highlighter.parse_entire_document
 
     assert_equal [1, 2, 3, 4, 5, 6], @highlighter.get_headers.map { |header| header[:line] }
+  end
+
+  def test_inline_and_block_markdown_tags
+    @text.value = "**bold** *italic* ***both*** `code` ~~strike~~\n> quote\n---"
+    @text.mark_set('insert', '1.0')
+
+    @highlighter.parse_entire_document
+
+    assert @text.tagged?('bold')
+    assert @text.tagged?('italic')
+    assert @text.tagged?('bold_italic')
+    assert @text.tagged?('code')
+    assert @text.tagged?('strikethrough')
+    assert @text.tagged?('blockquote')
+    assert @text.tagged?('hr')
+  end
+
+  def test_hr_stays_editable_while_cursor_is_on_the_line
+    @text.value = '---'
+    @text.mark_set('insert', '1.0')
+
+    @highlighter.parse_line(1, false)
+
+    refute @text.tagged?('hr')
+    assert @text.tagged?('md_symbol')
   end
 end
 
@@ -258,6 +299,25 @@ class EditorPaneRegressionTest < Minitest::Test
 
     assert_equal "first\n\n\nthird", text.value
   end
+
+  def test_hr_shortcut_drops_mirrored_asterisks
+    pane = EditorPane.allocate
+    text = FakeText.new('******')
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    app.define_singleton_method(:last_keypress_time=) { |_value| }
+    highlighter = Object.new
+    highlighter.define_singleton_method(:parse_line) { |_line_num, _force = false| }
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, highlighter)
+
+    text.mark_set('insert', '1.3')
+    pane.handle_return
+
+    assert_equal '***', text.value
+  end
 end
 
 class FileOperationRegressionTest < Minitest::Test
@@ -281,6 +341,7 @@ class FileOperationRegressionTest < Minitest::Test
       editor.instance_variable_set(:@is_modified, true)
       editor.instance_variable_set(:@backup_file, backup_file)
 
+      editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
       editor.define_singleton_method(:update_header_list) {}
       editor.define_singleton_method(:update_current_header) {}
       editor.define_singleton_method(:rotate_backups) {}
@@ -292,6 +353,46 @@ class FileOperationRegressionTest < Minitest::Test
       refute editor.is_modified
       assert_equal File.basename(file.path), status_center.text
     end
+  end
+
+  def test_open_file_aborts_when_discard_is_cancelled
+    editor = MarkdownEditor.allocate
+    fake_editor = FakeEditor.new('keep me')
+    editor.instance_variable_set(:@editor, fake_editor)
+    editor.instance_variable_set(:@is_modified, true)
+    Tk.define_singleton_method(:messageBox) { |**_kwargs| 'cancel' }
+    Tk.define_singleton_method(:getOpenFile) { raise 'file dialog should not open' }
+
+    editor.open_file
+
+    assert_equal 'keep me', fake_editor.text.value
+    assert editor.is_modified
+  end
+
+  def test_new_file_clears_buffer_after_discard
+    editor = MarkdownEditor.allocate
+    fake_editor = FakeEditor.new('old text')
+    notebook = FakeNotebook.new
+    status_center = FakeLabel.new
+    status_left = FakeLabel.new
+
+    editor.instance_variable_set(:@editor, fake_editor)
+    editor.instance_variable_set(:@notebook, notebook)
+    editor.instance_variable_set(:@tab_frame, Object.new)
+    editor.instance_variable_set(:@status_center, status_center)
+    editor.instance_variable_set(:@status_left, status_left)
+    editor.instance_variable_set(:@is_modified, true)
+
+    editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
+    editor.define_singleton_method(:rotate_backups) {}
+    editor.define_singleton_method(:update_status_left) {}
+    editor.define_singleton_method(:update_current_header) {}
+
+    editor.new_file
+
+    assert_equal '', fake_editor.text.value
+    refute editor.is_modified
+    assert_equal 'Untitled.md', notebook.configured_text
   end
 end
 

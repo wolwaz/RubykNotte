@@ -6,6 +6,56 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.0] — 2026-08-23 — `v0.3.0`
+
+Builds on **v0.2.0** with richer Markdown highlighting, safer file workflows, and writing-comfort controls.
+
+### Added
+
+#### Markdown highlighting
+- **Bold+italic** (`***text***`) via a dedicated `bold_italic` tag
+- **Inline code** (`` `code` ``) with theme-aware background and Courier
+- **Strikethrough** (`~~text~~`)
+- **Blockquotes** (`>`), indented and muted
+- **Horizontal rules** (`---`, `***`, `___`): rendered as a centered separator when the cursor is not on that line (or on a full-document parse); while typing on the line, markers stay editable
+- Theme tokens for `code_bg` / `code_fg`, `blockquote_fg`, `hr_color`, and `strike_fg`
+
+#### Editing
+- Horizontal-rule shortcut: a scaffolded `***|***` pair plus Enter keeps `***` and inserts a newline, then force-renders the rule
+- Symmetric `*` / `` ` `` pairing always scaffolds so `**`, `***`, and ``` can be typed through auto-close
+- Adjustable editor **text padding** (View → Increase / Decrease Text Padding)
+- Go to Line dialog closes with Escape (and the window close button)
+
+#### Safety
+- Unsaved-changes confirmation on **New**, **Open**, and **Open Recovery Backup** (Save / Don't Save / Cancel)
+- Backup rotation on startup so the previous session's recovery file is kept as `recovery.md.bak`
+- Recovery restore no longer calls `new_file` (that path rotated backups and could destroy the file just chosen)
+
+### Changed
+- Window title is `RubykNotte v0.3.0`
+- View menu labels: "Increase/Decrease Line Spacing"
+- Recovery picker shows primary and secondary timestamps when both backups exist
+- New / Open clear the buffer with `delete` before loading, then reset undo and auto-close marks
+
+### Fixed
+- New and Open could discard unsaved work with no prompt
+- Opening a recovery backup could rotate/overwrite the backup that was about to be loaded
+- KeyPress auto-pairing block indentation (behavior preserved: always-scaffold for `*` / `` ` ``)
+
+### Still limited / not done
+- Multi-tab support still not implemented (single Notebook tab)
+- Fenced code blocks, links, images, tables, and task lists are still out of scope
+- Nested mixed emphasis inside other spans remains line-parser limited
+- Theme, zoom, and padding are not persisted across restarts
+- Periodic named autosave and long-term version history remain future work
+
+### Validation
+- CI: `ruby -c tknote.rb` and `ruby -Itest test/regression_test.rb`
+- Regression coverage added for the new highlighter tags, unsaved-change confirmation, recovery-safe new-file clearing, and the HR Enter shortcut
+- Manual GUI testing is still required for pairing, themes, and popups
+
+---
+
 ## [0.2.0] — 2026-08 — `main`
 
 Promoted from the `test` integration branch. Builds on **v0.1.0** with reliability, editing, testing, and documentation improvements.
