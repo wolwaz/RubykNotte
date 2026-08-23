@@ -71,7 +71,9 @@ class FakeText
   def replace(start_index, end_index, string)
     start_offset = offset_for(start_index)
     end_offset = offset_for(end_index)
-    @value = @value[0...start_offset] + string.to_s + @value[end_offset..]
+    head = @value[0...start_offset] || ''
+    tail = @value[end_offset..] || ''
+    @value = head + string.to_s + tail
     @cursor = start_offset + string.to_s.length
   end
 
