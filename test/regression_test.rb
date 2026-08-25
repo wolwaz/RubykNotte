@@ -45,7 +45,7 @@ class FakeText
   end
 
   def get(start_index, end_index)
-    @value[offset_for(start_index)...offset_for(end_index)] || ''
+    @value[content_offset(start_index)...content_offset(end_index)] || ''
   end
 
   def index(index)
@@ -63,17 +63,15 @@ class FakeText
   end
 
   def insert(index, string)
-    offset = offset_for(index)
+    offset = content_offset(index)
     @value = @value[0...offset] + string.to_s + @value[offset..]
     @cursor = offset + string.to_s.length
   end
 
   def replace(start_index, end_index, string)
-    start_offset = offset_for(start_index)
-    end_offset = offset_for(end_index)
-    head = @value[0...start_offset] || ''
-    tail = @value[end_offset..] || ''
-    @value = head + string.to_s + tail
+    start_offset = content_offset(start_index)
+    end_offset = content_offset(end_index)
+    @value = @value[0...start_offset] + string.to_s + @value[end_offset..]
     @cursor = start_offset + string.to_s.length
   end
 
@@ -137,6 +135,13 @@ class FakeText
   end
 
   private
+
+  # Tk 'end' is one past the last character (virtual trailing newline).
+  # Slice/insert/delete must clamp to the real string so delete('1.0', 'end')
+  # matches the widget instead of concatenating a nil tail.
+  def content_offset(index)
+    offset_for(index).clamp(0, @value.length)
+  end
 
   def line_count
     @value.count("\n") + 1
@@ -319,6 +324,14 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.handle_return
 
     assert_equal '***', text.value
+  end
+end
+
+class FakeTextRegressionTest < Minitest::Test
+  def test_delete_through_end_clears_the_buffer
+    text = FakeText.new('hello')
+    text.delete('1.0', 'end')
+    assert_equal '', text.value
   end
 end
 
