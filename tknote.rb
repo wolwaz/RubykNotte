@@ -22,14 +22,20 @@ module Theme
       editor_bg: '#F8F1E3', text_fg: '#3E2C1F', muted_fg: '#705E4B',
       border: '#C8BDA8', button_bg: '#E5DAC1', button_hover: '#D9CBB0',
       button_pressed: '#CCBDA0', accent: '#3DAEE9', selection: '#B9DDF2',
-      menu_hover: '#D9CBB0', md_symbol: '#A08C70'
+      menu_hover: '#D9CBB0', md_symbol: '#A08C70',
+      code_bg: '#E0D5BD', code_fg: '#8B4513',
+      blockquote_fg: '#705E4B', hr_color: '#A08C70',
+      strike_fg: '#9A8870'
     },
     dark: {
       window_bg: '#2B2420', toolbar_bg: '#241F1C', status_bg: '#241F1C',
       editor_bg: '#2F2925', text_fg: '#E2D5C2', muted_fg: '#AFA18E',
       border: '#4A4038', button_bg: '#39312C', button_hover: '#474039',
       button_pressed: '#51473E', accent: '#5AAFE3', selection: '#3E6E8C',
-      menu_hover: '#474039', md_symbol: '#81705C'
+      menu_hover: '#474039', md_symbol: '#81705C',
+      code_bg: '#3A332E', code_fg: '#E8A07A',
+      blockquote_fg: '#AFA18E', hr_color: '#81705C',
+      strike_fg: '#807060'
     }
   }
 end
@@ -51,12 +57,37 @@ class MarkdownHighlighter
     @text.tag_configure('md_symbol', foreground: '#888888')
     @text.tag_configure('bold', font: [f[0], f[1], 'bold'])
     @text.tag_configure('italic', font: [f[0], f[1], 'italic'])
+    @text.tag_configure('bold_italic', font: [f[0], f[1], 'bold italic'])
     @text.tag_configure('h1', font: [f[0], f[1] + 6, 'bold'], foreground: '#333333')
     @text.tag_configure('h2', font: [f[0], f[1] + 4, 'bold'], foreground: '#444444')
     @text.tag_configure('h3', font: [f[0], f[1] + 2, 'bold'], foreground: '#555555')
     @text.tag_configure('h4', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
     @text.tag_configure('h5', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
     @text.tag_configure('h6', font: [f[0], f[1] + 1, 'bold'], foreground: '#666666')
+
+    # Horizontal rules, quotes, inline code, strikethrough
+    @text.tag_configure('hr',
+      foreground: '#A08C70', justify: 'center',
+      spacing1: 8, spacing3: 8,
+      font: [f[0], f[1] + 2, 'bold']
+    )
+    @text.tag_configure('blockquote',
+      lmargin1: 30, lmargin2: 30,
+      foreground: '#705E4B', spacing1: 2, spacing3: 2
+    )
+    @text.tag_configure('code',
+      background: '#E0D5BD', foreground: '#8B4513',
+      font: ['Courier', f[1]]
+    )
+    @text.tag_configure('strikethrough',
+      font: [f[0], f[1], 'overstrike'], foreground: '#9A8870'
+    )
+
+    @text.tag_raise('bold')
+    @text.tag_raise('italic')
+    @text.tag_raise('bold_italic')
+    @text.tag_raise('strikethrough')
+    @text.tag_raise('code')
     @text.tag_raise('md_symbol')
   end
 
@@ -65,29 +96,38 @@ class MarkdownHighlighter
     (1..6).each do |i|
       @text.tag_configure("h#{i}", foreground: colors[:text_fg])
     end
+    @text.tag_configure('hr', foreground: colors[:hr_color])
+    @text.tag_configure('blockquote', foreground: colors[:blockquote_fg])
+    @text.tag_configure('code', background: colors[:code_bg], foreground: colors[:code_fg])
+    @text.tag_configure('strikethrough', foreground: colors[:strike_fg])
   end
 
   def apply_font_settings(base_font_size)
     f = Theme::FONTS[:editor]
     @text.tag_configure('bold', font: [f[0], base_font_size, 'bold'])
     @text.tag_configure('italic', font: [f[0], base_font_size, 'italic'])
+    @text.tag_configure('bold_italic', font: [f[0], base_font_size, 'bold italic'])
     @text.tag_configure('h1', font: [f[0], base_font_size + 6, 'bold'])
     @text.tag_configure('h2', font: [f[0], base_font_size + 4, 'bold'])
     @text.tag_configure('h3', font: [f[0], base_font_size + 2, 'bold'])
     @text.tag_configure('h4', font: [f[0], base_font_size + 1, 'bold'])
     @text.tag_configure('h5', font: [f[0], base_font_size + 1, 'bold'])
     @text.tag_configure('h6', font: [f[0], base_font_size + 1, 'bold'])
+    @text.tag_configure('code', font: ['Courier', base_font_size])
+    @text.tag_configure('strikethrough', font: [f[0], base_font_size, 'overstrike'])
+    @text.tag_configure('hr', font: [f[0], base_font_size + 2, 'bold'])
   end
 
-  def parse_line(line_num)
+  def parse_line(line_num, force_render = false)
     start_idx = "#{line_num}.0"
     end_idx = "#{line_num}.end"
     line_text = @text.get(start_idx, end_idx)
 
-    ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'md_symbol'].each do |tag|
+    ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'bold_italic', 'md_symbol', 'hr', 'blockquote', 'code', 'strikethrough'].each do |tag|
       @text.tag_remove(tag, start_idx, end_idx)
     end
 
+    # Headers
     if m = line_text.match(/^(\#{1,6})\s+(.*)/)
       hash_count = m[1].length
       tag = "h#{hash_count}"
@@ -95,7 +135,28 @@ class MarkdownHighlighter
       @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.#{hash_count}")
     end
 
-    line_text.scan(/\*\*(?!\*)(.+?)(?<!\*)\*\*/) do
+    # Horizontal Rule
+    if line_text.match(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/)
+      cursor_line = @text.index('insert').split('.')[0].to_i
+      # Only render the thick separator bar if the cursor is NOT on this line,
+      # or if we are forcefully parsing the whole document (e.g., opening a file).
+      if force_render || line_num != cursor_line
+        @text.tag_add('hr', start_idx, end_idx)
+        return
+      else
+        # While typing, just color the symbols so it doesn't obstruct typing
+        @text.tag_add('md_symbol', start_idx, end_idx)
+      end
+    end
+
+    # Blockquote
+    if m = line_text.match(/^(\>\s?)(.*)/)
+      @text.tag_add('blockquote', start_idx, end_idx)
+      @text.tag_add('md_symbol', "#{line_num}.0", "#{line_num}.#{m[1].length}")
+    end
+
+    # Bold
+    line_text.scan(/(?<!\*)\*\*(?!\*)(.+?)(?<!\*)\*\*(?!\*)/) do
       m = Regexp.last_match
       content_start = m.begin(1)
       content_end   = m.end(1)
@@ -106,7 +167,8 @@ class MarkdownHighlighter
       @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 2}")
     end
 
-    line_text.scan(/(?<!\*)\*([^*]+?)\*(?!\*)/) do
+    # Italic
+    line_text.scan(/(?<!\*)\*(?!\*)([^*]+?)\*(?!\*)/) do
       m = Regexp.last_match
       content_start = m.begin(1)
       content_end   = m.end(1)
@@ -115,6 +177,42 @@ class MarkdownHighlighter
       @text.tag_add('italic', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
       @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 1}")
       @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 1}")
+    end
+    
+    # Bold + Italic (***text***)
+    line_text.scan(/\*\*\*(.+?)\*\*\*/) do
+      m = Regexp.last_match
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
+
+      @text.tag_add('bold_italic', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
+      @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 3}")
+      @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 3}")
+    end
+    
+    # Inline Code
+    line_text.scan(/`([^`]+)`/) do
+      m = Regexp.last_match
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
+
+      @text.tag_add('code', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
+      @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 1}")
+      @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 1}")
+    end
+
+    # Strikethrough
+    line_text.scan(/~~(.+?)~~/) do
+      m = Regexp.last_match
+      content_start = m.begin(1)
+      content_end   = m.end(1)
+      symbol_start  = m.begin(0)
+
+      @text.tag_add('strikethrough', "#{line_num}.#{content_start}", "#{line_num}.#{content_end}")
+      @text.tag_add('md_symbol', "#{line_num}.#{symbol_start}", "#{line_num}.#{symbol_start + 2}")
+      @text.tag_add('md_symbol', "#{line_num}.#{content_end}", "#{line_num}.#{content_end + 2}")
     end
   end
 
@@ -127,7 +225,7 @@ class MarkdownHighlighter
   def parse_entire_document
     total_lines = @text.index('end').split('.')[0].to_i - 1
     (1..total_lines).each do |line_num|
-      parse_line(line_num)
+      parse_line(line_num, true)
     end
     rebuild_headers_cache
   end
@@ -602,19 +700,26 @@ class EditorPane
       if @text.tag_ranges('sel').empty?
         if PAIR_OPEN_TO_CLOSE.key?(char)
           closer = PAIR_OPEN_TO_CLOSE[char]
-          next_char = @text.get('insert', 'insert + 1 char')
-
-          if SYMMETRIC_PAIR_CHARS.include?(char) && next_char == closer && consume_auto_close_mark
-            @text.mark_set('insert', 'insert + 1 char')
-            next 'break'
-          else
+          if SYMMETRIC_PAIR_CHARS.include?(char)
+            # Always scaffold *, ` so **, ***, and ``` can be typed through pairing
             after_proc = proc {
               @text.insert('insert', closer)
-              register_auto_close_mark
               @text.mark_set('insert', 'insert - 1 char')
             }
-            @callback_refs << after_proc
             Tk.after(0, &after_proc)
+          else
+            next_char = @text.get('insert', 'insert + 1 char')
+            if next_char == closer && consume_auto_close_mark
+              @text.mark_set('insert', 'insert + 1 char')
+              next 'break'
+            else
+              after_proc = proc {
+                @text.insert('insert', closer)
+                @text.mark_set('insert', 'insert - 1 char')
+                register_auto_close_mark
+              }
+              Tk.after(0, &after_proc)
+            end
           end
         elsif PAIR_CLOSER_CHARS.include?(char)
           next_char = @text.get('insert', 'insert + 1 char')
@@ -636,7 +741,6 @@ class EditorPane
     key_release = proc { |ev|
       Tk.after_cancel(@debounce_timer) if @debounce_timer
       debounce_proc = proc { parse_and_update }
-      @callback_refs << debounce_proc
       @debounce_timer = Tk.after(300, &debounce_proc)
     }
     @callback_refs << key_release
@@ -644,7 +748,6 @@ class EditorPane
 
     ctrl_v = proc {
       paste_proc = proc { parse_after_paste }
-      @callback_refs << paste_proc
       Tk.after(100, &paste_proc)
     }
     @callback_refs << ctrl_v
@@ -717,7 +820,22 @@ class EditorPane
   def handle_return
     current_line = @text.index('insert').split('.')[0].to_i
     line_text = @text.get("#{current_line}.0", "#{current_line}.end")
+    cursor_col = @text.index('insert').split('.')[1].to_i
 
+    # "--- HR shortcut: ***|*** + Enter → *** (separator) ---"
+    before = line_text[0, cursor_col]
+    after  = line_text[cursor_col..-1] || ''
+    if before.match(/\A\*{3,}\z/) && after.match(/\A\*+\z/)
+      @text.edit_separator
+      @text.delete('insert', "#{current_line}.end")   # drop the mirrored ***
+      @app.mark_modified                              # Return preempts the general KeyPress handler
+      @app.last_keypress_time = Time.now
+      hr_render = proc {
+        @highlighter.parse_line(current_line, true)   # by now the newline exists → render the bar
+      }
+      Tk.after(0, &hr_render)
+      return   # nil → Tk's class binding still inserts the newline
+    end
     if line_text.match(/^(\s*)([-*+])\s+/)
       indent = $1
       bullet = $2
@@ -733,7 +851,6 @@ class EditorPane
         @text.insert('insert', "#{indent}#{bullet} ")
         @text.edit_separator
       }
-      @callback_refs << return_proc
       Tk.after(0, &return_proc)
       return
     end
@@ -753,7 +870,6 @@ class EditorPane
         @text.insert('insert', "#{indent}#{num + 1}. ")
         @text.edit_separator
       }
-      @callback_refs << return_proc
       Tk.after(0, &return_proc)
       return
     end
@@ -860,7 +976,7 @@ class MarkdownEditor
   attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme, :last_keypress_time
 
   def initialize
-    @root = TkRoot.new { title "Markdown Note App v2 - OOP" }
+    @root = TkRoot.new { title "RubykNotte v0.3.0" }
     Tk::Tile::Style.theme_use('clam')
     @callback_refs = []
 
@@ -875,12 +991,16 @@ class MarkdownEditor
     @current_filepath = nil
     @base_font_size = 12
     @line_spacing = 4
+    @text_padding_x = Theme::SPACING[:editor_x]
+    @text_padding_y = Theme::SPACING[:editor_y]
     @last_keypress_time = Time.now
     @backup_due_time = nil
 
     @backup_dir = File.join(Dir.home, '.markdown_editor_backups')
     @backup_file = File.join(@backup_dir, 'recovery.md')
     Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
+
+    rotate_backups
 
     quit_app_proc = proc { quit_app }
     @callback_refs << quit_app_proc
@@ -920,7 +1040,6 @@ class MarkdownEditor
   def schedule_next_backup_check(ms)
     Tk.after_cancel(@backup_check_timer) if @backup_check_timer
     @backup_check_proc = proc { check_backup }
-    @callback_refs << @backup_check_proc
     @backup_check_timer = Tk.after(ms, &@backup_check_proc)
   end
 
@@ -1069,11 +1188,21 @@ class MarkdownEditor
 
     inc_spacing_proc = proc { change_spacing(2) }
     @callback_refs << inc_spacing_proc
-    @view_menu.add('command', label: 'Increase Spacing', command: inc_spacing_proc)
+    @view_menu.add('command', label: 'Increase Line Spacing', command: inc_spacing_proc)
 
     dec_spacing_proc = proc { change_spacing(-2) }
     @callback_refs << dec_spacing_proc
-    @view_menu.add('command', label: 'Decrease Spacing', command: dec_spacing_proc)
+    @view_menu.add('command', label: 'Decrease Line Spacing', command: dec_spacing_proc)
+
+    @view_menu.add('separator')
+
+    inc_padding_proc = proc { change_text_padding(2) }
+    @callback_refs << inc_padding_proc
+    @view_menu.add('command', label: 'Increase Text Padding', command: inc_padding_proc)
+
+    dec_padding_proc = proc { change_text_padding(-2) }
+    @callback_refs << dec_padding_proc
+    @view_menu.add('command', label: 'Decrease Text Padding', command: dec_padding_proc)
     
     @view_menu.add('separator')
 
@@ -1441,10 +1570,28 @@ class MarkdownEditor
     FileUtils.mv(@backup_file, bak_file, force: true)
   end
 
+  def confirm_discard_changes(action_label)
+    return true unless @is_modified
+    answer = Tk.messageBox(
+      type: 'yesnocancel', icon: 'question', title: 'Unsaved Changes',
+      message: "You have unsaved changes.\nSave before #{action_label}?"
+    )
+    case answer
+    when 'yes'
+      save_file
+      return !@is_modified
+    when 'no'
+      return true
+    else
+      return false
+    end
+  end
+
   def new_file
+    return unless confirm_discard_changes('creating a new document')
     rotate_backups
     @editor.text.state = 'normal'
-    @editor.text.value = ""
+    @editor.text.delete('1.0', 'end')
     @editor.reset_auto_close_tracking
     @editor.text.edit_reset
     @editor.text.tag_names.each do |tag|
@@ -1461,6 +1608,8 @@ class MarkdownEditor
   end
 
   def open_file
+    return unless confirm_discard_changes('opening another file')
+
     filename = Tk.getOpenFile(filetypes: [["Markdown Files", ".md"], ["All Files", "*"]])
     return if filename.nil? || filename.empty?
 
@@ -1473,6 +1622,7 @@ class MarkdownEditor
 
     rotate_backups
     @editor.text.state = 'normal'
+    @editor.text.delete('1.0', 'end')
     @editor.text.value = content
     @editor.reset_auto_close_tracking
     @editor.text.edit_reset
@@ -1487,57 +1637,36 @@ class MarkdownEditor
     update_current_header
   end
 
-def open_recovery_file
-  primary_exists = File.exist?(@backup_file) && File.size(@backup_file) > 0
-  bak_file = "#{@backup_file}.bak"
-  secondary_exists = File.exist?(bak_file) && File.size(bak_file) > 0
+  def open_recovery_file
+    primary_exists = File.exist?(@backup_file) && File.size(@backup_file) > 0
+    bak_file = "#{@backup_file}.bak"
+    secondary_exists = File.exist?(bak_file) && File.size(bak_file) > 0
 
-  if !primary_exists && !secondary_exists
-    Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data', 
-                  message: 'No crash recovery data was found.')
-    return
-  end
+    if !primary_exists && !secondary_exists
+      Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data',
+                    message: 'No crash recovery data was found.')
+      return
+    end
 
-  # Build the dialog options
-  msg = "Multiple recovery files were found. Which would you like to restore?\n\n"
-  msg += "1. Primary Backup (recovery.md)\n" if primary_exists
-  msg += "    Last modified: #{File.mtime(@backup_file)}\n\n" if primary_exists
-  msg += "2. Secondary Backup (recovery.md.bak)\n" if secondary_exists
-  msg += "    Last modified: #{File.mtime(bak_file)}\n" if secondary_exists
-  msg += "\n(If you only see one option, only one backup exists.)"
+    chosen_file = nil
+    if primary_exists && secondary_exists
+      ans = Tk.messageBox(
+        type: 'yesno', icon: 'question', title: 'Select Backup',
+        message: "Primary backup: #{File.mtime(@backup_file)}\n" +
+                 "Secondary backup: #{File.mtime(bak_file)}\n\n" +
+                 "Click 'Yes' for primary, 'No' for secondary."
+      )
+      chosen_file = ans == 'yes' ? @backup_file : bak_file
+    elsif primary_exists
+      chosen_file = @backup_file
+    else
+      chosen_file = bak_file
+    end
 
-  # Ask the user which one to load
-  answer = Tk.messageBox(
-    type: 'ok', 
-    icon: 'question', 
-    title: 'Choose Recovery File',
-    message: msg
-  )
-  # Note: Tk's standard messageBox doesn't support radio buttons well.
-  # In a real Tk app, you'd build a quick TkToplevel dialog for this.
-  # For a simple hack, you could use multiple yes/no prompts, 
-  # or just default to loading the primary, and if it fails/empty, load the secondary.
+    return unless chosen_file
 
-  # A better simple approach: Ask Yes/No for the .bak file first if it exists
-  chosen_file = nil
-  if primary_exists && secondary_exists
-    # Prompt: "Load primary? (No will load .bak)"
-    ans = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Select Backup', 
-                        message: "Primary backup exists. Do you want to load it?\n(Clicking 'No' will load the .bak file instead)")
-    chosen_file = ans == 'yes' ? @backup_file : bak_file
-  elsif primary_exists
-    chosen_file = @backup_file
-  elsif secondary_exists
-    chosen_file = bak_file
-  end
+    return unless confirm_discard_changes('opening recovery backup')
 
-  return unless chosen_file
-
-  # Load the chosen file
-  answer = Tk.messageBox(type: 'yesno', icon: 'question', title: 'Open Recovery', 
-                         message: 'This will open the recovery backup file in a new Untitled tab. Continue?')
-  
-  if answer == 'yes'
     begin
       content = File.read(chosen_file, encoding: 'UTF-8')
     rescue => e
@@ -1545,16 +1674,26 @@ def open_recovery_file
       return
     end
 
-    new_file
+    # Do NOT call new_file here — that would rotate backups and
+    # potentially overwrite the file we just read. Clear manually.
+    @editor.text.state = 'normal'
+    @editor.text.delete('1.0', 'end')
     @editor.text.value = content
+    @editor.reset_auto_close_tracking
+    @editor.text.edit_reset
+    @editor.text.tag_names.each do |tag|
+      @editor.text.tag_remove(tag, '1.0', 'end')
+    end
     @is_modified = true
-    current_text = @notebook.itemcget(@tab_frame, 'text')
-    @notebook.itemconfigure(@tab_frame, text: "* #{current_text}") unless current_text.start_with?('*')
+    @current_filename = 'Untitled.md'
+    @current_filepath = nil
+    @notebook.itemconfigure(@tab_frame, text: "* #{@current_filename}")
+    @status_center.text = @current_filename
     @editor.highlighter.parse_entire_document
     update_header_list
     update_status_left
+    update_current_header
   end
-end
 
   def save_file
     if @current_filepath.nil?
@@ -1657,7 +1796,11 @@ end
 
   def apply_font_settings
     f = Theme::FONTS[:editor]
-    @editor.text.configure(font: [f[0], @base_font_size], spacing1: @line_spacing, spacing2: @line_spacing, spacing3: @line_spacing)
+    @editor.text.configure(
+      font: [f[0], @base_font_size],
+      spacing1: @line_spacing, spacing2: @line_spacing, spacing3: @line_spacing,
+      padx: @text_padding_x, pady: @text_padding_y
+    )
     @editor.highlighter.apply_font_settings(@base_font_size)
   end
 
@@ -1741,10 +1884,21 @@ end
     @goto_entry.bind('Return', goto_jump_proc)
     @goto_btn = Tk::Tile::Button.new(@goto_dialog) { text "Go"; command goto_jump_proc }
     @goto_btn.pack(pady: 5)
+
+    goto_escape_proc = proc { @goto_dialog.destroy }
+    @callback_refs << goto_escape_proc
+    @goto_dialog.bind('Escape', goto_escape_proc)
+    @goto_dialog.protocol('WM_DELETE_WINDOW', goto_escape_proc)
   end
 
   def change_spacing(amount)
     @line_spacing = [0, @line_spacing + amount].max
+    apply_font_settings
+  end
+
+  def change_text_padding(amount)
+    @text_padding_x = [2, @text_padding_x + amount].max
+    @text_padding_y = [2, @text_padding_y + amount].max
     apply_font_settings
   end
 
@@ -1783,7 +1937,6 @@ end
 # 5. APP ENTRY POINT WITH CRASH HANDLER
 # ==========================================
 
-# Raise exceptions for signals so they propagate cleanly to the rescue block
 Signal.trap('SIGINT') { raise Interrupt }
 Signal.trap('SIGTERM') { raise SignalException.new('SIGTERM') }
 
