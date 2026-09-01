@@ -9,6 +9,7 @@ Direction for RubykNotte: a fast, lightweight, **writer-focused** Markdown edito
 3. **Plain local Markdown** — normal `.md` files, no proprietary format, no cloud requirement.
 4. **No Electron, no bundled AI** — pure Ruby + system Tk; keep the dependency surface tiny.
 5. **Improve, don’t rewrite** — prefer small, reversible changes over tearing out a working editor core.
+6. **Modular and customizable over time** — build toward configurable components without prematurely turning RubykNotte into a framework.
 
 Features are added only when they help writing, planning, editing, safety, navigation, or organization **without** undermining responsiveness.
 
@@ -93,6 +94,13 @@ Goal: make the current surface trustworthy. No big new subsystems until these fe
 - [ ] Neutral **Light** theme
 - [ ] Persist last theme (and later: font size, spacing, padding) locally
 
+### Configuration foundation
+
+- [ ] Introduce a small local settings layer for persistent user preferences
+- [ ] Persist theme, font size, line spacing, and editor padding across restarts
+- [ ] Keep settings storage simple, local, and easy to extend later
+- [ ] Avoid coupling settings persistence to any future plugin/modular system
+
 ---
 
 ## Next — writing comfort
@@ -117,12 +125,19 @@ Supports the “large Markdown” goal without leaving plain files.
 
 - [x] Basic go-to-heading popup
 - [x] Go to line
-- [ ] Heading outline sidebar (lazy, cheap updates)
+- [ ] **Sidebar workspace** — collapsible auxiliary panel for navigation and writing tools
+  - [ ] Header navigation / heading outline
+  - [ ] Search / Replace
+  - [ ] TODO list
+  - [ ] Design the sidebar so additional panels can be added later without making it permanently cluttered
+  - [ ] Allow the sidebar to collapse to maximize editor space
 - [ ] Searchable quick-jump-to-heading
 - [ ] Heading fold / unfold (and fold-to-level)
 - [ ] Back / forward navigation history
 - [ ] Simple bookmarks
 - [ ] Search match counters and clearer result navigation
+
+The sidebar is intentionally a **future subsystem**, not a near-term release requirement. Its initial purpose is to bring existing navigation and editing tools into one collapsible workspace, while leaving room for additional panels later.
 
 ---
 
@@ -213,6 +228,7 @@ Architecture stress tests — not commitments.
 - [ ] Customizable toolbar
 - [ ] Built-in performance diagnostics
 - [ ] Multi-document workspace manager
+- [ ] Extensible sidebar panels / plugin-like components
 
 **Not planned:** Electron, cloud sync as a core feature, or built-in AI assistants.
 
@@ -244,4 +260,5 @@ RubykNotte should remain a **local Markdown workspace for writers and planners**
 - Comfortable typography and a calm UI
 - Optional preview and simple splits without becoming an IDE
 - Companion notes as normal files beside the main document
+- A modular, configurable UI that can grow without overwhelming the editor
 - No Electron, no required cloud, no proprietary lock-in
