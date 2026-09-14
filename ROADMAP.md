@@ -17,6 +17,8 @@ Features are added only when they help writing, planning, editing, safety, navig
 
 ## Current release: v0.3.0
 
+Development branch **v0.4.1** adds persistent local settings only.
+
 ### Already in place
 
 #### Core editor
@@ -58,7 +60,7 @@ Features are added only when they help writing, planning, editing, safety, navig
 - [ ] Nested mixed emphasis inside other spans remains limited
 - [ ] Header popup reliability across platforms
 - [ ] Multi-line selection edge cases when moving lines
-- [ ] Theme, font size, spacing, and padding are not persisted across restarts
+- [x] Theme, font size, spacing, and padding persist across restarts (`v0.4.1`)
 - [ ] Multi-tab is UI-only (single tab still)
 
 ---
@@ -92,14 +94,14 @@ Goal: make the current surface trustworthy. No big new subsystems until these fe
 - [ ] Tighten toolbar grouping and spacing
 - [ ] Restyle dialogs / status / scrollbars for Sepia and Dark consistency
 - [ ] Neutral **Light** theme
-- [ ] Persist last theme (and later: font size, spacing, padding) locally
+- [x] Persist last theme, font size, spacing, and padding locally (`v0.4.1`)
 
 ### Configuration foundation
 
-- [ ] Introduce a small local settings layer for persistent user preferences
-- [ ] Persist theme, font size, line spacing, and editor padding across restarts
-- [ ] Keep settings storage simple, local, and easy to extend later
-- [ ] Avoid coupling settings persistence to any future plugin/modular system
+- [x] Introduce a small local settings layer for persistent user preferences (`v0.4.1`)
+- [x] Persist theme, font size, line spacing, and editor padding across restarts (`v0.4.1`)
+- [x] Keep settings storage simple, local, and easy to extend later
+- [x] Avoid coupling settings persistence to any future plugin/modular system
 
 ---
 

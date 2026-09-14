@@ -4,7 +4,9 @@
 
 A lightweight Markdown note editor written in pure Ruby + Tk.
 
-**Current release: v0.3.0** (branch `v0.3.0` → `main`)
+**Current release: v0.3.0** (branch `main`)
+
+**In progress: v0.4.1** — persistent local settings (theme, zoom, spacing, padding).
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -46,7 +48,7 @@ ruby tknote.rb
 - Auto-pairing for `*`, `` ` ``, `[]`, `()` (`*` / `` ` `` always scaffold so `**` / `***` / ``` work)
 - Arrow-key skip over Markdown delimiters
 - Move line up/down (`Ctrl+Up` / `Ctrl+Down`), duplicate line (`Ctrl+Shift+D`)
-- Zoom (`Ctrl++` / `Ctrl+-` / `Ctrl+0`), line spacing, and text padding
+- Zoom (`Ctrl++` / `Ctrl+-` / `Ctrl+0`), line spacing, and text padding (persisted in v0.4.1)
 - Read-only toggle
 - Go to line (`Ctrl+G`)
 - New / Open / Save / **Save As** / Quit with unsaved-changes prompts on New, Open, Recovery, and Quit
@@ -56,6 +58,7 @@ ruby tknote.rb
 - Emergency crash recovery backups under `~/.markdown_editor_backups/`
 - Atomic backup writes; primary + secondary (`.bak`) recovery files
 - Previous session rotated to `.bak` on startup
+- Theme, zoom, line spacing, and padding stored in `~/.markdown_editor_backups/settings.json` (v0.4.1)
 - **Open Recovery Backup…** in the File menu (does not rotate away the chosen backup)
 - Crash handler attempts an emergency save before exit
 
@@ -71,7 +74,6 @@ ruby tknote.rb
 - Fenced code blocks, links, images, tables, task lists
 - Periodic named autosave and long-term version history (recovery backups only)
 - Light theme / user-customizable themes
-- Persisted theme, zoom, and padding
 
 ## Known issues
 

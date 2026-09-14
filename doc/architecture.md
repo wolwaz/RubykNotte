@@ -1,6 +1,6 @@
 # Architecture Overview
 
-A single-window Markdown note editor written in Ruby/Tk. It provides live syntax highlighting, find/replace, header navigation, auto-pairing of `*`, `` ` ``, `[]`, and `()`, line moving/duplication, background crash recovery, and two themes (sepia, dark).
+A single-window Markdown note editor written in Ruby/Tk. It provides live syntax highlighting, find/replace, header navigation, auto-pairing of `*`, `` ` ``, `[]`, and `()`, line moving/duplication, background crash recovery, two themes (sepia, dark), and local persistence of theme/zoom/spacing/padding.
 
 ## High-level component diagram
 
@@ -46,12 +46,26 @@ MarkdownEditor  (root TkRoot)
     │                    └── @highlighter  (MarkdownHighlighter)
     ├── @find_dialog       (FindReplaceDialog, lazy)
     ├── @goto_dialog       (TkToplevel, lazy)
-    └── @header_popup      (TkToplevel, lazy)
+    ├── @header_popup      (TkToplevel, lazy)
+    └── @settings          (UserSettings)
 ```
 
 ## Class: Theme
 
 Module of design tokens. `SPACING`, `FONTS`, and `THEMES[:sepia|:dark]`. v0.3.0 adds `code_bg`, `code_fg`, `blockquote_fg`, `hr_color`, `strike_fg`.
+
+## Class: UserSettings
+
+Local JSON preferences at `~/.markdown_editor_backups/settings.json`.
+
+| Method | Description |
+|---|---|
+| `UserSettings.new(path = default)` | Load file or start from defaults |
+| `[](key)` | Read a normalized preference |
+| `replace(attrs)` | Merge known keys; clamp / validate |
+| `save` | Atomic write; returns `false` on I/O error |
+
+Known keys: `theme`, `font_size`, `line_spacing`, `text_padding_x`, `text_padding_y`. Invalid JSON or unknown themes never raise at startup.
 
 ## Class: MarkdownHighlighter
 
@@ -96,9 +110,18 @@ Notable methods added or changed in v0.3.0:
 | `open_recovery_file` | Confirm discard; load without `new_file` / rotate |
 | `rotate_backups` | Also called at startup |
 
+Notable methods added or changed in v0.4.1:
+
+| Method | Description |
+|---|---|
+| `select_theme(name)` | Switch theme and persist |
+| `persist_settings` | Write current theme/zoom/spacing/padding |
+| `zoom_in` / `zoom_out` / `reset_zoom` | Change font size, then persist |
+| `change_spacing` / `change_text_padding` | Change layout, then persist |
+
 Accessors: `:is_modified`, `:notebook`, `:tab_frame`, `:status_left`, `:root`, `:current_theme`, `:last_keypress_time`.
 
-Instance state includes `@text_padding_x`, `@text_padding_y`, `@backup_dir`, `@backup_file`, `@backup_check_timer`, `@backup_due_time`.
+Instance state includes `@settings`, `@text_padding_x`, `@text_padding_y`, `@backup_dir`, `@backup_file`, `@backup_check_timer`, `@backup_due_time`.
 
 ## Invariants
 

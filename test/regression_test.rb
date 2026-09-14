@@ -2,6 +2,7 @@
 
 require 'minitest/autorun'
 require 'tempfile'
+require 'tmpdir'
 
 # Load application classes without starting Tk or opening a GUI window.
 source = File.read(File.expand_path('../tknote.rb', __dir__))
@@ -426,5 +427,109 @@ class QuitRegressionTest < Minitest::Test
     editor.quit_app
 
     refute destroyed
+  end
+end
+
+class UserSettingsRegressionTest < Minitest::Test
+  def test_defaults_when_file_is_missing
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      settings = UserSettings.new(File.join(dir, 'settings.json'))
+
+      assert_equal :sepia, settings[:theme]
+      assert_equal 12, settings[:font_size]
+      assert_equal 4, settings[:line_spacing]
+      assert_equal 25, settings[:text_padding_x]
+      assert_equal 20, settings[:text_padding_y]
+    end
+  end
+
+  def test_roundtrip_persists_theme_zoom_spacing_and_padding
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      settings = UserSettings.new(path)
+      settings.replace(
+        theme: :dark,
+        font_size: 16,
+        line_spacing: 8,
+        text_padding_x: 30,
+        text_padding_y: 24
+      )
+
+      assert settings.save
+
+      loaded = UserSettings.new(path)
+      assert_equal :dark, loaded[:theme]
+      assert_equal 16, loaded[:font_size]
+      assert_equal 8, loaded[:line_spacing]
+      assert_equal 30, loaded[:text_padding_x]
+      assert_equal 24, loaded[:text_padding_y]
+    end
+  end
+
+  def test_unknown_theme_falls_back_to_sepia
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"theme":"neon","font_size":14}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal :sepia, settings[:theme]
+      assert_equal 14, settings[:font_size]
+    end
+  end
+
+  def test_corrupt_json_uses_defaults
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{not json')
+
+      settings = UserSettings.new(path)
+
+      assert_equal UserSettings::DEFAULTS, settings.to_h
+    end
+  end
+
+  def test_clamps_out_of_range_values
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"font_size":99,"line_spacing":-3,"text_padding_x":1}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal 24, settings[:font_size]
+      assert_equal 0, settings[:line_spacing]
+      assert_equal 2, settings[:text_padding_x]
+    end
+  end
+end
+
+class PersistSettingsRegressionTest < Minitest::Test
+  def test_persist_settings_writes_current_editor_values
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      editor = MarkdownEditor.allocate
+      editor.instance_variable_set(:@settings, UserSettings.new(path))
+      editor.instance_variable_set(:@current_theme, :dark)
+      editor.instance_variable_set(:@base_font_size, 18)
+      editor.instance_variable_set(:@line_spacing, 6)
+      editor.instance_variable_set(:@text_padding_x, 27)
+      editor.instance_variable_set(:@text_padding_y, 22)
+
+      assert editor.persist_settings
+
+      loaded = UserSettings.new(path)
+      assert_equal :dark, loaded[:theme]
+      assert_equal 18, loaded[:font_size]
+      assert_equal 6, loaded[:line_spacing]
+      assert_equal 27, loaded[:text_padding_x]
+      assert_equal 22, loaded[:text_padding_y]
+    end
+  end
+
+  def test_persist_settings_is_a_noop_without_settings
+    editor = MarkdownEditor.allocate
+    editor.instance_variable_set(:@settings, nil)
+
+    refute editor.persist_settings
   end
 end
