@@ -6,7 +6,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.4.2] — 2026-10-11 — `v0.4.2`
+## [0.4.2] — unreleased — `v0.4.2`
 
 Fix slice on top of **v0.4.1**. No new editor features. Crash recovery is unchanged (left for 0.4.3).
 
