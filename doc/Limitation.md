@@ -43,7 +43,7 @@
 
 - **Only two themes** — Sepia and Dark. No light/white theme, no user customization.
 - **Font family is hardcoded** — Noto Sans. If not installed, Tk falls back silently to a default which may look different. Inline code uses Courier.
-- **No theme persistence** — Theme, zoom, spacing, and padding reset on restart.
+- **Settings file is JSON** — Theme, zoom, spacing, and padding are stored in `~/.markdown_editor_backups/settings.json`. A corrupt file is ignored and defaults are used. Unknown theme names fall back to Sepia.
 
 ## Platform
 

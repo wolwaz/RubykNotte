@@ -9,7 +9,7 @@ ruby -Itest test/regression_test.rb
 
 The suite loads application classes **without** starting Tk/Tile. It is not a substitute for the GUI checklist below.
 
-## Automated coverage (v0.3.0)
+## Automated coverage (v0.3.0 + v0.4.1)
 
 - H1–H6 header discovery
 - Bold, italic, bold+italic, inline code, strikethrough, blockquote, and HR tags
@@ -21,6 +21,8 @@ The suite loads application classes **without** starting Tk/Tile. It is not a su
 - New file clears the buffer
 - HR Enter shortcut keeps `***` and drops the mirrored closers
 - Save-and-quit does not destroy the window if save did not clear modified
+- Settings defaults, JSON round-trip, unknown theme fallback, corrupt JSON, value clamping
+- `persist_settings` writes current editor values and is a no-op without `@settings`
 
 ## Manual test checklist
 
@@ -119,11 +121,14 @@ The suite loads application classes **without** starting Tk/Tile. It is not a su
 - [ ] Increase/Decrease Text Padding (floor 2)
 - [ ] Read-Only Toggle → uneditable, status "Read-Only Mode"
 - [ ] Open file while in read-only → switches back to normal
+- [ ] Change zoom / spacing / padding, quit, reopen → values restored
 
 ### Themes
 - [ ] Theme → Sepia / Dark
 - [ ] Code, quote, HR, and strike colors follow the theme
 - [ ] All UI elements update: menubar, toolbar, text, scrollbar, menus, status
+- [ ] Switch theme, quit, reopen → last theme restored
+- [ ] Delete or corrupt `~/.markdown_editor_backups/settings.json` → editor still starts with Sepia defaults
 
 ### Status bar
 - [ ] Word / char / reading time update after typing pauses
@@ -142,5 +147,6 @@ When changing X, re-test Y:
 | `move_line_up/down` | Selection preservation, first/last line |
 | `save_file` / `save_as_file` / `confirm_discard_changes` | New, Open, Recovery, Quit |
 | `apply_theme` | Both themes, code/quote/HR/strike tags |
+| `persist_settings` / `UserSettings` | Restart restores theme/zoom/spacing/padding; corrupt JSON still starts |
 | `replace_all` | Cursor, scroll, backrefs |
 | Backup logic | Idle trigger, startup rotate, recovery without clobber |

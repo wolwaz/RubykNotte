@@ -1,6 +1,7 @@
 require 'tk'
 require 'tkextlib/tile'
 require 'fileutils'
+require 'json'
 
 # ==========================================
 # 0. CENTRALIZED DESIGN SYSTEM
@@ -38,6 +39,108 @@ module Theme
       strike_fg: '#807060'
     }
   }
+end
+
+# ==========================================
+# 0b. LOCAL SETTINGS
+# ==========================================
+# Tiny JSON preferences file. Invalid or missing files fall back to defaults
+# so a corrupt settings.json can never keep the editor from starting.
+class UserSettings
+  DEFAULTS = {
+    theme: :sepia,
+    font_size: 12,
+    line_spacing: 4,
+    text_padding_x: 25,
+    text_padding_y: 20
+  }.freeze
+
+  def self.default_path
+    File.join(Dir.home, '.markdown_editor_backups', 'settings.json')
+  end
+
+  attr_reader :path
+
+  def initialize(path = nil)
+    @path = path || self.class.default_path
+    @values = DEFAULTS.dup
+    load_from_disk
+  end
+
+  def [](key)
+    @values[key]
+  end
+
+  def to_h
+    @values.dup
+  end
+
+  def replace(attrs)
+    attrs.each do |key, value|
+      key = key.to_sym
+      next unless DEFAULTS.key?(key)
+      @values[key] = normalize(key, value)
+    end
+    self
+  end
+
+  def save
+    FileUtils.mkdir_p(File.dirname(@path))
+    tmp_path = "#{@path}.tmp.#{Process.pid}"
+    File.write(tmp_path, JSON.pretty_generate(serializable), encoding: 'UTF-8')
+    FileUtils.mv(tmp_path, @path, force: true)
+    true
+  rescue SystemCallError, JSON::GeneratorError
+    false
+  ensure
+    File.delete(tmp_path) if defined?(tmp_path) && tmp_path && File.exist?(tmp_path)
+  end
+
+  private
+
+  def load_from_disk
+    return unless File.file?(@path)
+
+    raw = JSON.parse(File.read(@path, encoding: 'UTF-8'))
+    return unless raw.is_a?(Hash)
+
+    replace(raw)
+  rescue JSON::ParserError, SystemCallError, EncodingError
+    @values = DEFAULTS.dup
+  end
+
+  def normalize(key, value)
+    case key
+    when :theme
+      name = value.to_s.to_sym
+      Theme::THEMES.key?(name) ? name : DEFAULTS[:theme]
+    when :font_size
+      clamp_int(value, 8, 24, DEFAULTS[:font_size])
+    when :line_spacing
+      clamp_int(value, 0, 40, DEFAULTS[:line_spacing])
+    when :text_padding_x, :text_padding_y
+      clamp_int(value, 2, 100, DEFAULTS[key])
+    else
+      value
+    end
+  end
+
+  def clamp_int(value, min, max, fallback)
+    n = Integer(value)
+    [[n, min].max, max].min
+  rescue ArgumentError, TypeError
+    fallback
+  end
+
+  def serializable
+    {
+      'theme' => @values[:theme].to_s,
+      'font_size' => @values[:font_size],
+      'line_spacing' => @values[:line_spacing],
+      'text_padding_x' => @values[:text_padding_x],
+      'text_padding_y' => @values[:text_padding_y]
+    }
+  end
 end
 
 # ==========================================
@@ -976,7 +1079,7 @@ class MarkdownEditor
   attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme, :last_keypress_time
 
   def initialize
-    @root = TkRoot.new { title "RubykNotte v0.3.0" }
+    @root = TkRoot.new { title "RubykNotte v0.4.1" }
     Tk::Tile::Style.theme_use('clam')
     @callback_refs = []
 
@@ -989,10 +1092,13 @@ class MarkdownEditor
     @is_modified = false
     @current_filename = 'Untitled.md'
     @current_filepath = nil
-    @base_font_size = 12
-    @line_spacing = 4
-    @text_padding_x = Theme::SPACING[:editor_x]
-    @text_padding_y = Theme::SPACING[:editor_y]
+
+    @settings = UserSettings.new
+    @base_font_size = @settings[:font_size]
+    @line_spacing = @settings[:line_spacing]
+    @text_padding_x = @settings[:text_padding_x]
+    @text_padding_y = @settings[:text_padding_y]
+    @current_theme = @settings[:theme]
     @last_keypress_time = Time.now
     @backup_due_time = nil
 
@@ -1006,7 +1112,6 @@ class MarkdownEditor
     @callback_refs << quit_app_proc
     @root.protocol('WM_DELETE_WINDOW', quit_app_proc)
 
-    @current_theme = :sepia
     @find_dialog = nil
     @goto_dialog = nil
     @header_popup = nil
@@ -1225,11 +1330,11 @@ class MarkdownEditor
 
     @theme_menu = TkMenu.new(@root, tearoff: 0, font: Theme::FONTS[:ui])
 
-    sepia_theme_proc = proc { @current_theme = :sepia; apply_theme }
+    sepia_theme_proc = proc { select_theme(:sepia) }
     @callback_refs << sepia_theme_proc
     @theme_menu.add('command', label: 'Sepia', command: sepia_theme_proc)
 
-    dark_theme_proc = proc { @current_theme = :dark; apply_theme }
+    dark_theme_proc = proc { select_theme(:dark) }
     @callback_refs << dark_theme_proc
     @theme_menu.add('command', label: 'Dark', command: dark_theme_proc)
 
@@ -1730,7 +1835,8 @@ class MarkdownEditor
   end
 
   def apply_theme
-    c = Theme::THEMES[@current_theme]
+    c = Theme::THEMES[@current_theme] || Theme::THEMES[:sepia]
+    @current_theme = :sepia unless Theme::THEMES.key?(@current_theme)
     ui_font = Theme::FONTS[:ui]
 
     @root.background(c[:window_bg])
@@ -1817,19 +1923,43 @@ class MarkdownEditor
     end
   end
 
+  def select_theme(name)
+    @current_theme = name
+    apply_theme
+    persist_settings
+  end
+
+  def persist_settings
+    return unless @settings
+
+    @settings.replace(
+      theme: @current_theme,
+      font_size: @base_font_size,
+      line_spacing: @line_spacing,
+      text_padding_x: @text_padding_x,
+      text_padding_y: @text_padding_y
+    )
+    @settings.save
+  rescue StandardError
+    false
+  end
+
   def zoom_in
     @base_font_size = [24, @base_font_size + 1].min
     apply_font_settings
+    persist_settings
   end
 
   def zoom_out
     @base_font_size = [8, @base_font_size - 1].max
     apply_font_settings
+    persist_settings
   end
 
   def reset_zoom
     @base_font_size = 12
     apply_font_settings
+    persist_settings
   end
 
   def goto_line_dialog
@@ -1894,12 +2024,14 @@ class MarkdownEditor
   def change_spacing(amount)
     @line_spacing = [0, @line_spacing + amount].max
     apply_font_settings
+    persist_settings
   end
 
   def change_text_padding(amount)
     @text_padding_x = [2, @text_padding_x + amount].max
     @text_padding_y = [2, @text_padding_y + amount].max
     apply_font_settings
+    persist_settings
   end
 
   def quit_app
@@ -1917,7 +2049,8 @@ class MarkdownEditor
 
     Tk.after_cancel(@backup_check_timer) if @backup_check_timer
     @editor.cancel_timers if @editor
-    
+    persist_settings
+
     @root.destroy
   end
 

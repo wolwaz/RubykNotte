@@ -6,6 +6,21 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.1] — unreleased — `v0.4.1`
+
+Incremental slice on top of **v0.3.0**. Persistent local settings only. No new editor subsystems.
+
+### Added
+- `UserSettings` reads and writes `~/.markdown_editor_backups/settings.json`
+- Theme, zoom (font size), line spacing, and text padding survive restarts
+- Settings are saved on theme/zoom/spacing/padding changes and on a clean quit
+- Corrupt or unknown settings fall back to defaults so the editor still starts
+
+### Validation
+- Regression coverage for defaults, round-trip, unknown theme, corrupt JSON, clamping, and `persist_settings`
+
+---
+
 ## [0.3.0] — 2026-08-23 — `v0.3.0`
 
 Builds on **v0.2.0** with richer Markdown highlighting, safer file workflows, and writing-comfort controls.
