@@ -6,7 +6,7 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.4.1] — unreleased — `v0.4.1`
+## [0.4.1] — 2026-10-11 — `v0.4.1`
 
 Incremental slice on top of **v0.3.0**. Persistent local settings only. No new editor subsystems.
 
