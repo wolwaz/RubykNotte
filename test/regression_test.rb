@@ -277,6 +277,41 @@ class FindReplaceRegressionTest < Minitest::Test
     assert_equal '1.11', editor.text.index('sel.first')
     assert_equal '1.16', editor.text.index('sel.last')
   end
+
+  def test_replace_current_marks_the_document_dirty
+    editor = FakeEditor.new('alpha')
+    editor.text.tag_add('sel', '1.0', '1.5')
+    marked = false
+    editor.app.define_singleton_method(:mark_modified) { marked = true }
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('beta'))
+    dialog.define_singleton_method(:find) { |_direction| }
+
+    dialog.replace_current
+
+    assert marked
+    assert_equal 'beta', editor.text.value
+  end
+
+  def test_replace_all_marks_dirty_only_when_text_changes
+    editor = FakeEditor.new('alpha alpha')
+    marked = false
+    editor.app.define_singleton_method(:mark_modified) { marked = true }
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('alpha'))
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('beta'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
+
+    dialog.replace_all
+
+    assert marked
+    assert_equal 'beta beta', editor.text.value
+  end
 end
 
 class EditorPaneRegressionTest < Minitest::Test
@@ -298,7 +333,10 @@ class EditorPaneRegressionTest < Minitest::Test
   def test_duplicate_line_handles_an_empty_line
     pane = EditorPane.allocate
     text = FakeText.new("first\n\nthird")
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
     pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
     pane.instance_variable_set(:@highlighter, Object.new)
     pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
 
@@ -306,6 +344,43 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.duplicate_line
 
     assert_equal "first\n\n\nthird", text.value
+  end
+
+  def test_duplicate_line_marks_the_document_dirty
+    pane = EditorPane.allocate
+    text = FakeText.new("alpha\nbeta")
+    marked = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+
+    text.mark_set('insert', '1.0')
+    pane.duplicate_line
+
+    assert marked
+    assert_equal "alpha\nalpha\nbeta", text.value
+  end
+
+  def test_move_line_up_swaps_with_the_line_above_and_marks_dirty
+    pane = EditorPane.allocate
+    text = FakeText.new("alpha\nbeta")
+    marked = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+
+    text.mark_set('insert', '2.0')
+    pane.move_line_up
+
+    assert marked
+    assert_equal "beta\nalpha", text.value
+    assert_equal '1.0', text.index('insert')
   end
 
   def test_hr_shortcut_drops_mirrored_asterisks
@@ -501,6 +576,20 @@ class UserSettingsRegressionTest < Minitest::Test
       assert_equal 2, settings[:text_padding_x]
     end
   end
+
+  def test_non_finite_numbers_fall_back_instead_of_raising
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"font_size":1e999,"line_spacing":1e999,"text_padding_x":1e999}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal 12, settings[:font_size]
+      assert_equal 4, settings[:line_spacing]
+      assert_equal 25, settings[:text_padding_x]
+      assert_equal 20, settings[:text_padding_y]
+    end
+  end
 end
 
 class PersistSettingsRegressionTest < Minitest::Test
@@ -531,5 +620,21 @@ class PersistSettingsRegressionTest < Minitest::Test
     editor.instance_variable_set(:@settings, nil)
 
     refute editor.persist_settings
+  end
+
+  def test_spacing_and_padding_stop_at_the_saved_maximum
+    editor = MarkdownEditor.allocate
+    editor.instance_variable_set(:@line_spacing, 40)
+    editor.instance_variable_set(:@text_padding_x, 100)
+    editor.instance_variable_set(:@text_padding_y, 100)
+    editor.define_singleton_method(:apply_font_settings) {}
+    editor.define_singleton_method(:persist_settings) { true }
+
+    editor.change_spacing(2)
+    editor.change_text_padding(2)
+
+    assert_equal 40, editor.instance_variable_get(:@line_spacing)
+    assert_equal 100, editor.instance_variable_get(:@text_padding_x)
+    assert_equal 100, editor.instance_variable_get(:@text_padding_y)
   end
 end

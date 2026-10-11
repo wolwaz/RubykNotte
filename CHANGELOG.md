@@ -6,6 +6,23 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.2] — unreleased — `v0.4.2`
+
+Fix slice on top of **v0.4.1**. No new editor features. Crash recovery is unchanged (left for 0.4.3).
+
+### Fixed
+- A settings file with a non-finite number such as `1e999` falls back to defaults instead of stopping startup
+- Line spacing cannot go above 40, and text padding cannot go above 100, so the value on screen is the value that is saved
+- Replace and Replace All mark the document dirty
+- Move line up/down and duplicate line mark the document dirty
+- Ctrl+Shift+D duplicates the line. Tk's Ctrl+D "delete character" binding no longer steals that shortcut
+- Ctrl+Up / Ctrl+Down are bound for both `Control-Up` and `Control-Key-Up`, and the Text class no longer keeps those keys
+
+### Validation
+- Regression coverage for non-finite settings, spacing/padding caps, replace dirty state, duplicate, and move-line-up
+
+---
+
 ## [0.4.1] — unreleased — `v0.4.1`
 
 Incremental slice on top of **v0.3.0**. Persistent local settings only. No new editor subsystems.

@@ -114,7 +114,9 @@ else default Return
 
 ### Ctrl+Shift+D / Ctrl+Up / Ctrl+Down
 
-Duplicate current line; move current line or selected block up/down, re-applying `sel` when there was a selection.
+Duplicate current line; move current line or selected block up/down, re-applying `sel` when there was a selection. These mark the document dirty.
+
+Ctrl+Shift+D is bound for both `D` and `d`, because Tk often delivers the lowercase keysym. The Text class Ctrl+D delete binding is disabled so it cannot delete a character instead. Ctrl+Up and Ctrl+Down are bound as both `Control-Up` and `Control-Key-Up`.
 
 ## Auto-close pair flow
 

@@ -105,7 +105,7 @@ class UserSettings
     return unless raw.is_a?(Hash)
 
     replace(raw)
-  rescue JSON::ParserError, SystemCallError, EncodingError
+  rescue JSON::ParserError, SystemCallError, EncodingError, RangeError
     @values = DEFAULTS.dup
   end
 
@@ -126,9 +126,11 @@ class UserSettings
   end
 
   def clamp_int(value, min, max, fallback)
+    return fallback if value.is_a?(Numeric) && !value.finite?
+
     n = Integer(value)
     [[n, min].max, max].min
-  rescue ArgumentError, TypeError
+  rescue ArgumentError, TypeError, RangeError
     fallback
   end
 
@@ -528,6 +530,7 @@ class FindReplaceDialog
       @text.edit_separator
       @text.replace(match_start, match_end, @replace_entry.value)
       @text.edit_separator
+      @editor.app.mark_modified
 
       @editor.highlighter.parse_entire_document
       @editor.app.update_header_list
@@ -566,6 +569,7 @@ class FindReplaceDialog
     @text.edit_separator
     @text.replace('1.0', 'end - 1 char', new_text)
     @text.edit_separator
+    @editor.app.mark_modified if new_text != text
 
     total_lines = @text.index('end').split('.')[0].to_i - 1
     cursor_line = [cursor_line, total_lines].min
@@ -700,15 +704,30 @@ class EditorPane
 
     ctrl_up = proc { move_line_up; 'break' }
     @callback_refs << ctrl_up
-    @text.bind('Control-Up', ctrl_up)
+    ['Control-Up', 'Control-Key-Up'].each { |seq| @text.bind(seq, ctrl_up) }
 
     ctrl_down = proc { move_line_down; 'break' }
     @callback_refs << ctrl_down
-    @text.bind('Control-Down', ctrl_down)
+    ['Control-Down', 'Control-Key-Down'].each { |seq| @text.bind(seq, ctrl_down) }
 
-    ctrl_shift_d = proc { duplicate_line; 'break' }
-    @callback_refs << ctrl_shift_d
-    @text.bind('Control-Shift-D', ctrl_shift_d)
+    duplicate_proc = proc { duplicate_line; 'break' }
+    @callback_refs << duplicate_proc
+    ['Control-Shift-D', 'Control-Shift-d', 'Control-Shift-Key-D', 'Control-Shift-Key-d'].each do |seq|
+      @text.bind(seq, duplicate_proc)
+    end
+
+    # X11 often reports Ctrl+Shift+D as keysym "d" plus the Shift bit, which
+    # also matches the Text class Control-d "delete character" binding.
+    ctrl_d = proc { |ev|
+      state = ev.respond_to?(:state) ? ev.state.to_i : 0
+      if (state & 1) != 0
+        duplicate_line
+        'break'
+      end
+    }
+    @callback_refs << ctrl_d
+    @text.bind('Control-d', ctrl_d)
+    @text.bind('Control-Key-d', ctrl_d)
 
     ctrl_g = proc { @app.goto_line_dialog; 'break' }
     @callback_refs << ctrl_g
@@ -1019,6 +1038,7 @@ class EditorPane
     @text.mark_set('insert', "#{current_line - 1}.#{current_col}")
     @text.see('insert')
     @text.edit_separator
+    @app.mark_modified
 
     (start_line - 1).upto(end_line).each { |l| @highlighter.parse_line(l) }
   end
@@ -1054,6 +1074,7 @@ class EditorPane
     @text.mark_set('insert', "#{current_line + 1}.#{current_col}")
     @text.see('insert')
     @text.edit_separator
+    @app.mark_modified
 
     start_line.upto(end_line + 1).each { |l| @highlighter.parse_line(l) }
   end
@@ -1067,6 +1088,7 @@ class EditorPane
     @text.mark_set('insert', "#{current_line + 1}.0")
     @text.see('insert')
     @text.edit_separator
+    @app.mark_modified
 
     @highlighter.parse_line(current_line + 1)
   end
@@ -1079,7 +1101,7 @@ class MarkdownEditor
   attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme, :last_keypress_time
 
   def initialize
-    @root = TkRoot.new { title "RubykNotte v0.4.1" }
+    @root = TkRoot.new { title "RubykNotte v0.4.2" }
     Tk::Tile::Style.theme_use('clam')
     @callback_refs = []
 
@@ -1191,7 +1213,15 @@ class MarkdownEditor
   def disable_tk_emacs_bindings
     @emacs_kill_proc = proc { 'break' }
     @callback_refs << @emacs_kill_proc
-    ['Control-b', 'Control-i', 'Control-k', 'Control-f', 'Control-g', 'Control-s', 'Control-o', 'Control-n', 'Control-q'].each do |key|
+    # Ctrl-H stays: it is Tk's backspace (delete the character on the left).
+    # Ctrl-D is stopped here because Ctrl+Shift+D often arrives as Control-d
+    # and was deleting a character instead of duplicating the line.
+    # Ctrl-Up/Down are stopped so paragraph motion cannot run instead of move-line.
+    [
+      'Control-b', 'Control-i', 'Control-k', 'Control-f', 'Control-g',
+      'Control-s', 'Control-o', 'Control-n', 'Control-q', 'Control-d',
+      'Control-Up', 'Control-Down', 'Control-Key-Up', 'Control-Key-Down'
+    ].each do |key|
       Tk.bind('Text', key, @emacs_kill_proc)
     end
   end
@@ -2022,14 +2052,14 @@ class MarkdownEditor
   end
 
   def change_spacing(amount)
-    @line_spacing = [0, @line_spacing + amount].max
+    @line_spacing = [[0, @line_spacing + amount].max, 40].min
     apply_font_settings
     persist_settings
   end
 
   def change_text_padding(amount)
-    @text_padding_x = [2, @text_padding_x + amount].max
-    @text_padding_y = [2, @text_padding_y + amount].max
+    @text_padding_x = [[2, @text_padding_x + amount].max, 100].min
+    @text_padding_y = [[2, @text_padding_y + amount].max, 100].min
     apply_font_settings
     persist_settings
   end

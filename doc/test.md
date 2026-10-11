@@ -9,7 +9,7 @@ ruby -Itest test/regression_test.rb
 
 The suite loads application classes **without** starting Tk/Tile. It is not a substitute for the GUI checklist below.
 
-## Automated coverage (v0.3.0 + v0.4.1)
+## Automated coverage (v0.3.0 + v0.4.1 + v0.4.2)
 
 - H1–H6 header discovery
 - Bold, italic, bold+italic, inline code, strikethrough, blockquote, and HR tags
@@ -22,7 +22,10 @@ The suite loads application classes **without** starting Tk/Tile. It is not a su
 - HR Enter shortcut keeps `***` and drops the mirrored closers
 - Save-and-quit does not destroy the window if save did not clear modified
 - Settings defaults, JSON round-trip, unknown theme fallback, corrupt JSON, value clamping
+- Non-finite settings numbers fall back instead of raising
+- Spacing and padding stop at the same maximum that is saved
 - `persist_settings` writes current editor values and is a no-op without `@settings`
+- Replace current marks the buffer dirty; duplicate and move-line-up do too
 
 ## Manual test checklist
 
