@@ -117,7 +117,8 @@ Notable methods added or changed in v0.4.1:
 | `select_theme(name)` | Switch theme and persist |
 | `persist_settings` | Write current theme/zoom/spacing/padding |
 | `zoom_in` / `zoom_out` / `reset_zoom` | Change font size, then persist |
-| `change_spacing` / `change_text_padding` | Change layout, then persist |
+| `change_spacing` / `change_text_padding` | Change layout within the saved range (spacing 0–40, padding 2–100), then persist |
+| `disable_tk_emacs_bindings` | Also stops Ctrl-D and Ctrl-Up/Down on the Text class |
 
 Accessors: `:is_modified`, `:notebook`, `:tab_frame`, `:status_left`, `:root`, `:current_theme`, `:last_keypress_time`.
 

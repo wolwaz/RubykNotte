@@ -17,7 +17,7 @@ Features are added only when they help writing, planning, editing, safety, navig
 
 ## Current release: v0.3.0
 
-Development branch **v0.4.1** adds persistent local settings only.
+Development branch **v0.4.2** fixes shortcut and settings-edge bugs found after v0.4.1. Crash recovery behavior is unchanged and is not part of this slice.
 
 ### Already in place
 

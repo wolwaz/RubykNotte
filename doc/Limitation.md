@@ -48,7 +48,7 @@
 ## Platform
 
 - **Tk required** — The tk Ruby gem must be installed. Not bundled with default Ruby since 2.x.
-- **Emacs bindings disabled globally** — Ctrl-B, Ctrl-I, Ctrl-K, Ctrl-F, Ctrl-G, Ctrl-S, Ctrl-O, Ctrl-N, Ctrl-Q are killed on all Text widgets. Ctrl-H and Ctrl-D are intentionally left alone.
+- **Emacs bindings disabled globally** — Ctrl-B, Ctrl-I, Ctrl-K, Ctrl-F, Ctrl-G, Ctrl-S, Ctrl-O, Ctrl-N, Ctrl-Q, and Ctrl-D are killed on all Text widgets. Ctrl-D was deleting a character when Ctrl+Shift+D did not match. Ctrl-H is still Tk's backspace. Ctrl-Up and Ctrl-Down are also killed on the Text class so they cannot fight line move.
 - **No high-DPI awareness** — On Retina/4K displays, the editor may appear small. Use Ctrl+Plus to zoom.
 - **No clipboard integration beyond Tk default** — No "Copy as HTML" or "Paste from Markdown" features.
 
