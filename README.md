@@ -4,9 +4,9 @@
 
 A lightweight Markdown note editor written in pure Ruby + Tk.
 
-**Current release: v0.3.0** (branch `main`)
+**Current release: v0.4.2** (branch `main`)
 
-**In progress: v0.4.2** — shortcut and settings fixes (Emacs leftovers, replace dirty state, spacing/padding caps). Crash recovery is unchanged.
+**In progress: v0.4.3** — trying to fix and improve crash recovery.
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
