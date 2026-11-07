@@ -1101,7 +1101,7 @@ class MarkdownEditor
   attr_accessor :is_modified, :notebook, :tab_frame, :status_left, :root, :current_theme, :last_keypress_time
 
   def initialize
-    @root = TkRoot.new { title "RubykNotte v0.4.2" }
+    @root = TkRoot.new { title "RubykNotte v0.4.3" }
     Tk::Tile::Style.theme_use('clam')
     @callback_refs = []
 
@@ -1126,9 +1126,12 @@ class MarkdownEditor
 
     @backup_dir = File.join(Dir.home, '.markdown_editor_backups')
     @backup_file = File.join(@backup_dir, 'recovery.md')
+    @recovery_meta = File.join(@backup_dir, 'recovery.json')
+    @recovery_lock = File.join(@backup_dir, 'recovery.pid')
+    @recovery_writer = false
     Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
 
-    rotate_backups
+    claim_recovery_lock
 
     quit_app_proc = proc { quit_app }
     @callback_refs << quit_app_proc
@@ -1160,7 +1163,8 @@ class MarkdownEditor
     apply_font_settings
 
     update_current_header
-    
+
+    offer_startup_recovery
     schedule_next_backup_check(10000)
   end
 
@@ -1171,6 +1175,11 @@ class MarkdownEditor
   end
 
   def check_backup
+    unless @recovery_writer
+      schedule_next_backup_check(10000)
+      return
+    end
+
     if @is_modified
       time_since_type = Time.now - (@last_keypress_time || Time.now)
       
@@ -1205,9 +1214,168 @@ class MarkdownEditor
   end
 
   def write_backup_atomic(content)
+    return unless @recovery_writer
+
+    Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
     tmp_file = "#{@backup_file}.tmp"
     File.write(tmp_file, content, encoding: 'UTF-8')
     FileUtils.mv(tmp_file, @backup_file, force: true)
+    write_recovery_meta
+  end
+
+  def write_recovery_meta
+    payload = {
+      'path' => @current_filepath,
+      'filename' => @current_filename,
+      'saved_at' => Time.now.strftime('%Y-%m-%dT%H:%M:%S')
+    }
+    tmp_file = "#{@recovery_meta}.tmp"
+    File.write(tmp_file, JSON.generate(payload), encoding: 'UTF-8')
+    FileUtils.mv(tmp_file, @recovery_meta, force: true)
+  end
+
+  def claim_recovery_lock
+    @recovery_writer = false
+    if File.exist?(@recovery_lock)
+      pid = Integer(File.read(@recovery_lock).strip) rescue 0
+      return if pid > 0 && pid != Process.pid && process_alive?(pid)
+    end
+
+    File.write(@recovery_lock, "#{Process.pid}\n")
+    @recovery_writer = true
+  end
+
+  def process_alive?(pid)
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH
+    false
+  rescue Errno::EPERM
+    true
+  end
+
+  def release_recovery_lock
+    return unless @recovery_writer && @recovery_lock && File.exist?(@recovery_lock)
+
+    current = File.read(@recovery_lock).strip
+    File.delete(@recovery_lock) if current == Process.pid.to_s
+  rescue SystemCallError
+    nil
+  end
+
+  def recovery_has_text?(path)
+    File.file?(path) && File.size(path) > 0
+  rescue SystemCallError
+    false
+  end
+
+  def recovery_meta_for(text_path)
+    return @recovery_meta if text_path == @backup_file
+    return "#{@recovery_meta}.bak" if text_path == "#{@backup_file}.bak"
+
+    "#{text_path}.json"
+  end
+
+  def read_recovery_meta(text_path)
+    meta_path = recovery_meta_for(text_path)
+    return {} unless meta_path && File.file?(meta_path)
+
+    raw = JSON.parse(File.read(meta_path, encoding: 'UTF-8'))
+    raw.is_a?(Hash) ? raw : {}
+  rescue JSON::ParserError, SystemCallError, EncodingError
+    {}
+  end
+
+  def first_recovery_line(path)
+    line = ''
+    File.open(path, 'r:UTF-8') do |file|
+      file.each_line do |raw|
+        text = raw.strip
+        next if text.empty?
+
+        line = text
+        break
+      end
+    end
+    return '(empty)' if line.empty?
+
+    line.length > 80 ? "#{line[0, 77]}..." : line
+  rescue EncodingError, SystemCallError
+    '(unreadable)'
+  end
+
+  def format_bytes(size)
+    return "#{size} B" if size < 1024
+
+    format('%.1f KB', size / 1024.0)
+  end
+
+  def recovery_summary(path, label)
+    stat = File.stat(path)
+    meta = read_recovery_meta(path)
+    name = meta['filename'].to_s
+    name = 'Untitled' if name.empty?
+    "#{label}: #{name} — #{stat.mtime.strftime('%Y-%m-%d %H:%M')} — #{format_bytes(stat.size)}\n#{first_recovery_line(path)}"
+  end
+
+  def recovery_choices
+    choices = []
+    if recovery_has_text?(@backup_file)
+      choices << {
+        path: @backup_file,
+        label: 'Open latest',
+        summary: recovery_summary(@backup_file, 'Latest')
+      }
+    end
+    previous = "#{@backup_file}.bak"
+    if recovery_has_text?(previous)
+      choices << {
+        path: previous,
+        label: 'Open previous',
+        summary: recovery_summary(previous, 'Previous')
+      }
+    end
+    choices
+  end
+
+  def offer_startup_recovery
+    unless @recovery_writer
+      Tk.messageBox(
+        type: 'ok', icon: 'info', title: 'Recovery',
+        message: 'Another RubykNotte window is already running. This window will not write a crash recovery.'
+      )
+      return
+    end
+    return unless recovery_has_text?(@backup_file)
+
+    answer = Tk.messageBox(
+      type: 'yesno', icon: 'question', title: 'Restore recovery?',
+      message: "#{recovery_summary(@backup_file, 'Latest')}\n\nRestore this unsaved text?\nYes opens it. No starts blank and keeps this copy as the previous recovery."
+    )
+    apply_startup_recovery_choice(answer)
+  end
+
+  def apply_startup_recovery_choice(answer)
+    if answer == 'yes'
+      load_recovery_file(@backup_file)
+    else
+      rotate_backups
+    end
+  end
+
+  def clear_current_recovery
+    return unless @recovery_writer
+    return unless File.exist?(@backup_file) || (@recovery_meta && File.exist?(@recovery_meta))
+
+    meta = read_recovery_meta(@backup_file)
+    source = meta['path']
+    source = nil unless source.is_a?(String) && !source.strip.empty?
+    return if source && source != @current_filepath
+
+    File.delete(@backup_file) if File.exist?(@backup_file)
+    File.delete(@recovery_meta) if @recovery_meta && File.exist?(@recovery_meta)
+  rescue SystemCallError
+    nil
   end
 
   def disable_tk_emacs_bindings
@@ -1701,8 +1869,11 @@ class MarkdownEditor
 
   def rotate_backups
     return unless File.exist?(@backup_file)
-    bak_file = "#{@backup_file}.bak"
-    FileUtils.mv(@backup_file, bak_file, force: true)
+
+    FileUtils.mv(@backup_file, "#{@backup_file}.bak", force: true)
+    return unless @recovery_meta && File.exist?(@recovery_meta)
+
+    FileUtils.mv(@recovery_meta, "#{@recovery_meta}.bak", force: true)
   end
 
   def confirm_discard_changes(action_label)
@@ -1724,7 +1895,6 @@ class MarkdownEditor
 
   def new_file
     return unless confirm_discard_changes('creating a new document')
-    rotate_backups
     @editor.text.state = 'normal'
     @editor.text.delete('1.0', 'end')
     @editor.reset_auto_close_tracking
@@ -1755,7 +1925,6 @@ class MarkdownEditor
       return
     end
 
-    rotate_backups
     @editor.text.state = 'normal'
     @editor.text.delete('1.0', 'end')
     @editor.text.value = content
@@ -1773,44 +1942,64 @@ class MarkdownEditor
   end
 
   def open_recovery_file
-    primary_exists = File.exist?(@backup_file) && File.size(@backup_file) > 0
-    bak_file = "#{@backup_file}.bak"
-    secondary_exists = File.exist?(bak_file) && File.size(bak_file) > 0
-
-    if !primary_exists && !secondary_exists
+    choices = recovery_choices
+    if choices.empty?
       Tk.messageBox(type: 'ok', icon: 'info', title: 'No Recovery Data',
                     message: 'No crash recovery data was found.')
       return
     end
 
-    chosen_file = nil
-    if primary_exists && secondary_exists
-      ans = Tk.messageBox(
-        type: 'yesno', icon: 'question', title: 'Select Backup',
-        message: "Primary backup: #{File.mtime(@backup_file)}\n" +
-                 "Secondary backup: #{File.mtime(bak_file)}\n\n" +
-                 "Click 'Yes' for primary, 'No' for secondary."
-      )
-      chosen_file = ans == 'yes' ? @backup_file : bak_file
-    elsif primary_exists
-      chosen_file = @backup_file
-    else
-      chosen_file = bak_file
-    end
-
+    chosen_file = choose_recovery_path(choices)
     return unless chosen_file
-
     return unless confirm_discard_changes('opening recovery backup')
 
-    begin
-      content = File.read(chosen_file, encoding: 'UTF-8')
-    rescue => e
-      Tk.messageBox(type: 'ok', icon: 'error', title: "Error Reading Backup", message: e.message)
-      return
+    load_recovery_file(chosen_file)
+  end
+
+  def choose_recovery_path(choices)
+    return nil if choices.empty?
+    return choices.first[:path] if choices.length == 1
+
+    chosen = nil
+    dialog = TkToplevel.new(@root)
+    dialog.title = 'Open Recovery'
+    dialog.transient(@root) if @root
+
+    intro = Tk::Tile::Label.new(dialog)
+    intro.text = 'Choose which recovery to open.'
+    intro.pack(anchor: 'w', padx: 12, pady: 8)
+
+    choices.each do |choice|
+      row = Tk::Tile::Frame.new(dialog)
+      row.pack(fill: 'x', padx: 12, pady: 4)
+      label = Tk::Tile::Label.new(row)
+      label.text = choice[:summary]
+      label.configure(wraplength: 420, justify: 'left')
+      label.pack(anchor: 'w')
+      command = proc { chosen = choice[:path]; dialog.destroy }
+      @callback_refs << command
+      button = Tk::Tile::Button.new(row)
+      button.text = choice[:label]
+      button.command = command
+      button.pack(anchor: 'w', pady: 2)
     end
 
-    # Do NOT call new_file here — that would rotate backups and
-    # potentially overwrite the file we just read. Clear manually.
+    cancel = proc { dialog.destroy }
+    @callback_refs << cancel
+    cancel_button = Tk::Tile::Button.new(dialog)
+    cancel_button.text = 'Cancel'
+    cancel_button.command = cancel
+    cancel_button.pack(pady: 8)
+    dialog.protocol('WM_DELETE_WINDOW', cancel)
+    dialog.grab
+    dialog.wait_window
+    chosen
+  end
+
+  def load_recovery_file(path)
+    content = File.read(path, encoding: 'UTF-8')
+    meta = read_recovery_meta(path)
+
     @editor.text.state = 'normal'
     @editor.text.delete('1.0', 'end')
     @editor.text.value = content
@@ -1819,15 +2008,26 @@ class MarkdownEditor
     @editor.text.tag_names.each do |tag|
       @editor.text.tag_remove(tag, '1.0', 'end')
     end
+
+    source = meta['path']
+    if source.is_a?(String) && !source.strip.empty?
+      @current_filepath = source
+      @current_filename = File.basename(source)
+    else
+      @current_filepath = nil
+      @current_filename = 'Untitled.md'
+    end
     @is_modified = true
-    @current_filename = 'Untitled.md'
-    @current_filepath = nil
     @notebook.itemconfigure(@tab_frame, text: "* #{@current_filename}")
     @status_center.text = @current_filename
     @editor.highlighter.parse_entire_document
     update_header_list
     update_status_left
     update_current_header
+    true
+  rescue SystemCallError, EncodingError => e
+    Tk.messageBox(type: 'ok', icon: 'error', title: 'Error Reading Backup', message: e.message)
+    false
   end
 
   def save_file
@@ -1847,6 +2047,7 @@ class MarkdownEditor
     @notebook.itemconfigure(@tab_frame, text: @current_filename)
     @status_center.text = @current_filename
     update_status_left
+    clear_current_recovery
   end
 
   def save_as_file
@@ -2080,6 +2281,7 @@ class MarkdownEditor
     Tk.after_cancel(@backup_check_timer) if @backup_check_timer
     @editor.cancel_timers if @editor
     persist_settings
+    release_recovery_lock
 
     @root.destroy
   end

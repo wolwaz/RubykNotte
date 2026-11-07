@@ -9,7 +9,7 @@ ruby -Itest test/regression_test.rb
 
 The suite loads application classes **without** starting Tk/Tile. It is not a substitute for the GUI checklist below.
 
-## Automated coverage (v0.3.0 + v0.4.1 + v0.4.2)
+## Automated coverage (v0.3.0 + v0.4.1 + v0.4.2 + v0.4.3)
 
 - H1–H6 header discovery
 - Bold, italic, bold+italic, inline code, strikethrough, blockquote, and HR tags
@@ -26,6 +26,7 @@ The suite loads application classes **without** starting Tk/Tile. It is not a su
 - Spacing and padding stop at the same maximum that is saved
 - `persist_settings` writes current editor values and is a no-op without `@settings`
 - Replace current marks the buffer dirty; duplicate and move-line-up do too
+- Recovery rotation, startup restore/decline, New leaving recovery in place, summaries, save clearing the current copy, sidecar path, and the recovery lock
 
 ## Manual test checklist
 
@@ -44,11 +45,14 @@ The suite loads application classes **without** starting Tk/Tile. It is not a su
 - [ ] `* ` prefix removed after save
 
 ### Crash recovery & backups
-- [ ] Type text, wait 5+ seconds → `~/.markdown_editor_backups/recovery.md` is updated
-- [ ] Kill app process (crash) → `emergency_save!` triggers, recovery.md contains latest text
-- [ ] Restart app → previous `recovery.md` rotated to `recovery.md.bak`
-- [ ] Open Recovery Backup → choose primary/secondary by timestamp, confirm discard, opens Untitled marked modified
+- [ ] Type text, wait 5+ seconds → `recovery.md` and `recovery.json` update
+- [ ] Kill app process (crash) → `emergency_save!` writes the latest text
+- [ ] Restart → a dialog offers Restore or start blank. Start blank moves the file to `recovery.md.bak`
+- [ ] Restore opens the source file from `recovery.json` when it has one, marked modified. Save writes it back and deletes `recovery.md`
+- [ ] New and Open do not rotate `recovery.md`
+- [ ] Open Recovery Backup → Latest and Previous show name, time, size, and the first line
 - [ ] Open Recovery Backup does **not** delete the file that was just loaded
+- [ ] A second window shows that it will not write recovery
 - [ ] No recovery data exists → "No Recovery Data" info dialog
 
 ### Markdown highlighting

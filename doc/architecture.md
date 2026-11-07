@@ -107,8 +107,10 @@ Notable methods added or changed in v0.3.0:
 | `confirm_discard_changes(label)` | Yes/No/Cancel if modified; Yes runs `save_file` |
 | `change_text_padding(amount)` | Adjust `@text_padding_x/y` (min 2) then `apply_font_settings` |
 | `new_file` / `open_file` | Confirm discard first |
-| `open_recovery_file` | Confirm discard; load without `new_file` / rotate |
-| `rotate_backups` | Also called at startup |
+| `open_recovery_file` | Confirm discard; load without rotating |
+| `rotate_backups` | Only when startup restore is declined |
+| `load_recovery_file` | Load text and source path from `recovery.json` |
+| `clear_current_recovery` | Delete current recovery after a successful save |
 
 Notable methods added or changed in v0.4.1:
 
@@ -144,10 +146,16 @@ Instance state includes `@settings`, `@text_padding_x`, `@text_padding_y`, `@bac
 
 - Empty buffer, `Untitled.md`, no path
 - `@is_modified == false`
-- Previous recovery file rotated to `.bak`
+- Recovery files are left where they are
 
 ### After `open_recovery_file`
 
 - Buffer equals chosen backup
-- Document is Untitled and marked modified
+- Source path from `recovery.json` is restored when present; otherwise Untitled
+- Document is marked modified
 - Chosen backup file is left in place (not rotated)
+
+### After `save_file` (success), recovery
+
+- Current `recovery.md` and `recovery.json` are deleted when this window owns the lock
+- `recovery.md.bak` is left in place

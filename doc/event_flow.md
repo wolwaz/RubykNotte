@@ -17,8 +17,6 @@ Tk.getOpenFile
   ↓
 File.read(filename)
   ↓
-rotate_backups
-  ↓
 text.delete + text.value = content
 reset_auto_close_tracking
 edit_reset
@@ -41,6 +39,7 @@ Ctrl+S
         ↓
 @is_modified = false
 tab name loses "* " prefix
+current recovery.md and recovery.json deleted (previous .bak kept)
 ```
 
 ### Ctrl+Shift+S → `save_as_file`
@@ -53,8 +52,6 @@ Prompts for a path, confirms overwrite if the file exists, then `save_file`.
 Ctrl+N
   ↓
 confirm_discard_changes('creating a new document')
-  ↓
-rotate_backups
   ↓
 text.delete('1.0', 'end')
 reset_auto_close_tracking
@@ -74,15 +71,17 @@ If modified: Yes → `save_file` (abort quit if still modified), No → destroy,
 File → Open Recovery Backup…
   ↓
 none → "No Recovery Data"
-both → Yes = primary, No = secondary (timestamps shown)
+one → that file
+both → a window labeled Latest and Previous (name, time, size, first line)
   ↓
 confirm_discard_changes('opening recovery backup')
   ↓
-read chosen file
+read chosen file and recovery.json
   ↓
-clear buffer WITHOUT new_file / rotate_backups
+clear buffer without rotating
   ↓
-Untitled.md, @is_modified = true, full parse
+source path if known, otherwise Untitled.md
+@is_modified = true, full parse
 ```
 
 ## Editing commands
@@ -167,12 +166,21 @@ Sets `@current_theme` and `apply_theme`: root, text colors, ttk styles, menus, h
 ```
 App start
   ↓
-rotate_backups          ← recovery.md becomes recovery.md.bak
-  ↓
+claim recovery.pid
+  ├── another live window → do not write recovery
+  └── this window is the writer
+        ↓
+recovery.md has text?
+  ├── Yes → ask to restore
+  │     ├── Restore → load it, keep the file until a successful save
+  │     └── Start blank → rotate recovery.md and recovery.json to .bak
+  └── No → leave .bak alone
+        ↓
 schedule_next_backup_check(10000)
   ↓
-if modified and idle > 2s (or due ≥ 5s while still typing)
-  → atomic write to recovery.md
+if this window is the writer, and the document is modified,
+and idle > 2s (or due ≥ 5s while still typing)
+  → atomic write to recovery.md and recovery.json
 ```
 
-On uncaught exception: `emergency_save!` then `Tk.exit`.
+On uncaught exception: `emergency_save!` (only if this window holds the lock) then `Tk.exit`. Quit releases `recovery.pid`.

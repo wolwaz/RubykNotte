@@ -56,10 +56,12 @@ ruby tknote.rb
 
 ### Reliability
 - Emergency crash recovery backups under `~/.markdown_editor_backups/`
-- Atomic backup writes; primary + secondary (`.bak`) recovery files
-- Previous session rotated to `.bak` on startup
+- Atomic backup writes; latest `recovery.md` plus one previous `recovery.md.bak`
+- Startup asks to restore a non-empty recovery. New and Open do not rotate it
+- Recovery remembers the source file (`recovery.json`) so Save can write it back
+- A successful save clears the current recovery. A second window does not overwrite it
 - Theme, zoom, line spacing, and padding stored in `~/.markdown_editor_backups/settings.json` (v0.4.1)
-- **Open Recovery Backup…** in the File menu (does not rotate away the chosen backup)
+- **Open Recovery Backup…** shows Latest and Previous (name, time, size, first line) and does not rotate the chosen file
 - Crash handler attempts an emergency save before exit
 
 ### Testing & CI
