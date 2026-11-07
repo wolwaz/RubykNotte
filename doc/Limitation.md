@@ -13,7 +13,7 @@
 ## Editor Behavior
 
 - **Single tab only** — The notebook has one tab. Multiple files cannot be open simultaneously.
-- **No multi-file auto-save** — The app has a single-file crash recovery backup (`recovery.md`), but no timer-based autosave for individually named open files. There is no version history.
+- **No multi-file auto-save** — One window keeps a single crash recovery (`recovery.md`, plus one previous `.bak`) and a `recovery.json` sidecar with the source path. New and Open do not rotate it. A second window does not write recovery while the first is running. There is no version history.
 - **No file watching** — If the file changes on disk while open in the editor, no reload prompt is shown.
 - **Undo granularity** — `autoseparators false` is used; manual `edit_separator` calls are placed strategically, but consecutive character inserts may still result in per-keystroke undo steps depending on binding flow.
 - **No drag-and-drop** — Files cannot be dropped onto the window to open them.

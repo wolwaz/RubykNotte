@@ -6,6 +6,23 @@ Format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.3] — unreleased — `v0.4.3`
+
+Crash recovery is easier to get back, and harder to overwrite by accident.
+
+### Changed
+- Startup asks before touching a non-empty `recovery.md`: Restore, or start blank
+- Starting blank rotates that file to `recovery.md.bak` once. New and Open no longer rotate it
+- `recovery.json` remembers the source path and filename. Restore opens that file, still marked unsaved, so Save writes it back
+- A successful Save or Save As deletes the current recovery. The previous `.bak` copy stays
+- Open Recovery shows Latest and Previous with the source name, time, size, and first text line
+- Only the first RubykNotte window writes recovery. A second window is told it will not
+
+### Validation
+- Regression coverage for rotation, startup restore/decline, New leaving recovery in place, summaries, save clearing the current copy, the sidecar, and the recovery lock
+
+---
+
 ## [0.4.2] — unreleased — `v0.4.2`
 
 Fix slice on top of **v0.4.1**. No new editor features. Crash recovery is unchanged (left for 0.4.3).

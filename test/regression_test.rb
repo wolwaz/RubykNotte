@@ -638,3 +638,186 @@ class PersistSettingsRegressionTest < Minitest::Test
     assert_equal 100, editor.instance_variable_get(:@text_padding_y)
   end
 end
+
+class RecoveryRegressionTest < Minitest::Test
+  def setup_editor(dir)
+    editor = MarkdownEditor.allocate
+    fake = FakeEditor.new
+    notebook = FakeNotebook.new
+    status_center = FakeLabel.new
+    status_left = FakeLabel.new
+    editor.instance_variable_set(:@editor, fake)
+    editor.instance_variable_set(:@notebook, notebook)
+    editor.instance_variable_set(:@tab_frame, Object.new)
+    editor.instance_variable_set(:@status_center, status_center)
+    editor.instance_variable_set(:@status_left, status_left)
+    editor.instance_variable_set(:@backup_dir, dir)
+    editor.instance_variable_set(:@backup_file, File.join(dir, 'recovery.md'))
+    editor.instance_variable_set(:@recovery_meta, File.join(dir, 'recovery.json'))
+    editor.instance_variable_set(:@recovery_lock, File.join(dir, 'recovery.pid'))
+    editor.instance_variable_set(:@recovery_writer, true)
+    editor.instance_variable_set(:@current_filename, 'Untitled.md')
+    editor.instance_variable_set(:@current_filepath, nil)
+    editor.instance_variable_set(:@is_modified, false)
+    editor.define_singleton_method(:update_header_list) {}
+    editor.define_singleton_method(:update_status_left) {}
+    editor.define_singleton_method(:update_current_header) {}
+    editor
+  end
+
+  def test_rotate_moves_text_and_sidecar
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      File.write(editor.instance_variable_get(:@backup_file), "# Kept\n\nbody")
+      File.write(editor.instance_variable_get(:@recovery_meta), '{"filename":"notes.md"}')
+
+      editor.rotate_backups
+
+      refute File.exist?(File.join(dir, 'recovery.md'))
+      refute File.exist?(File.join(dir, 'recovery.json'))
+      assert_equal "# Kept\n\nbody", File.read(File.join(dir, 'recovery.md.bak'))
+      assert_equal '{"filename":"notes.md"}', File.read(File.join(dir, 'recovery.json.bak'))
+    end
+  end
+
+  def test_declining_startup_restore_rotates_and_accepting_keeps_the_file
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      recovery = editor.instance_variable_get(:@backup_file)
+      File.write(recovery, "# Crash\n\nstill here")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+
+      editor.apply_startup_recovery_choice('no')
+      assert File.exist?(File.join(dir, 'recovery.md.bak'))
+      refute File.exist?(recovery)
+
+      File.write(recovery, "# Crash\n\nstill here")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+      editor.apply_startup_recovery_choice('yes')
+
+      assert File.exist?(recovery)
+      assert_equal "# Crash\n\nstill here", editor.instance_variable_get(:@editor).text.value
+      assert_equal '/tmp/notes.md', editor.instance_variable_get(:@current_filepath)
+      assert_equal 'notes.md', editor.instance_variable_get(:@current_filename)
+      assert editor.is_modified
+    end
+  end
+
+  def test_new_file_does_not_rotate_recovery
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      fake = editor.instance_variable_get(:@editor)
+      fake.text.value = 'old text'
+      editor.instance_variable_set(:@is_modified, true)
+      editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
+      File.write(editor.instance_variable_get(:@backup_file), 'crash text')
+
+      editor.new_file
+
+      assert_equal '', fake.text.value
+      assert_equal 'crash text', File.read(editor.instance_variable_get(:@backup_file))
+    end
+  end
+
+  def test_summary_includes_source_time_size_and_first_line
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      path = editor.instance_variable_get(:@backup_file)
+      File.write(path, "\n# Hello recovery\n\nmore")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('filename' => 'notes.md'))
+
+      summary = editor.recovery_summary(path, 'Latest')
+
+      assert_includes summary, 'Latest: notes.md'
+      assert_includes summary, '# Hello recovery'
+      assert_includes summary, 'B'
+    end
+  end
+
+  def test_save_clears_current_recovery_but_not_the_previous_copy
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'notes.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'unsaved')
+      File.write(editor.instance_variable_get(:@recovery_meta), '{}')
+      File.write("#{editor.instance_variable_get(:@backup_file)}.bak", 'older')
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+      editor.instance_variable_get(:@editor).text.value = 'saved text'
+
+      editor.save_file
+
+      assert_equal 'saved text', File.read(note)
+      refute File.exist?(editor.instance_variable_get(:@backup_file))
+      refute File.exist?(editor.instance_variable_get(:@recovery_meta))
+      assert_equal 'older', File.read("#{editor.instance_variable_get(:@backup_file)}.bak")
+      refute editor.is_modified
+    end
+  end
+
+  def test_save_keeps_recovery_that_belongs_to_a_different_file
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'other.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'crash text')
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'other.md')
+      editor.instance_variable_get(:@editor).text.value = 'other text'
+
+      editor.save_file
+
+      assert_equal 'crash text', File.read(editor.instance_variable_get(:@backup_file))
+      assert File.exist?(editor.instance_variable_get(:@recovery_meta))
+    end
+  end
+
+  def test_backup_writes_sidecar_with_the_open_path
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      editor.instance_variable_set(:@current_filepath, '/tmp/notes.md')
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+
+      editor.write_backup_atomic("# Note\n")
+
+      meta = JSON.parse(File.read(editor.instance_variable_get(:@recovery_meta)))
+      assert_equal '/tmp/notes.md', meta['path']
+      assert_equal 'notes.md', meta['filename']
+      assert_equal "# Note\n", File.read(editor.instance_variable_get(:@backup_file))
+    end
+  end
+
+  def test_second_window_does_not_take_a_live_lock
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      pid = Process.spawn('sleep', '30')
+      begin
+        editor = setup_editor(dir)
+        File.write(editor.instance_variable_get(:@recovery_lock), "#{pid}\n")
+
+        editor.claim_recovery_lock
+
+        refute editor.instance_variable_get(:@recovery_writer)
+        assert_equal pid.to_s, File.read(editor.instance_variable_get(:@recovery_lock)).strip
+      ensure
+        Process.kill('TERM', pid)
+        Process.wait(pid)
+      end
+    end
+  end
+
+  def test_dead_lock_can_be_claimed
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      pid = Process.spawn('sleep', '0.2')
+      Process.wait(pid)
+      editor = setup_editor(dir)
+      File.write(editor.instance_variable_get(:@recovery_lock), "#{pid}\n")
+
+      editor.claim_recovery_lock
+
+      assert editor.instance_variable_get(:@recovery_writer)
+      assert_equal Process.pid.to_s, File.read(editor.instance_variable_get(:@recovery_lock)).strip
+      editor.release_recovery_lock
+      refute File.exist?(editor.instance_variable_get(:@recovery_lock))
+    end
+  end
+end
