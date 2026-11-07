@@ -23,7 +23,7 @@ Fix slice on top of **v0.4.1**. No new editor features. Crash recovery is unchan
 
 ---
 
-## [0.4.1] — 2026-10-10 — `v0.4.1`
+## [0.4.1] — 2026-10-11 — `v0.4.1`
 
 Incremental slice on top of **v0.3.0**. Persistent local settings only. No new editor subsystems.
 
