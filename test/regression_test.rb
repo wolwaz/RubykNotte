@@ -47,5 +47,786 @@ class FakeText
     @applied_tags = []
   end
 
-  # ... remainder of the original test file (full content is 27k; this call may truncate)
+  def value=(new_value)
+    @value = new_value.to_s
+    @cursor = 0
+    @selection = nil
+    @applied_tags = []
+  end
+
+  def get(start_index, end_index)
+    @value[content_offset(start_index)...content_offset(end_index)] || ''
+  end
+
+  def index(index)
+    offset = offset_for(index)
+    return "#{line_count + 1}.0" if offset > @value.length
+
+    before = @value[0...offset]
+    line = before.count("\n") + 1
+    column = offset - (before.rindex("\n") || -1) - 1
+    "#{line}.#{column}"
+  end
+
+  def count(_start_index, end_index, _unit)
+    [offset_for(end_index)]
+  end
+
+  def insert(index, string)
+    offset = content_offset(index)
+    @value = @value[0...offset] + string.to_s + @value[offset..]
+    @cursor = offset + string.to_s.length
+  end
+
+  def replace(start_index, end_index, string)
+    start_offset = content_offset(start_index)
+    end_offset = content_offset(end_index)
+    @value = @value[0...start_offset] + string.to_s + @value[end_offset..]
+    @cursor = start_offset + string.to_s.length
+  end
+
+  def delete(start_index, end_index)
+    replace(start_index, end_index, '')
+  end
+
+  def mark_set(mark, index)
+    raise ArgumentError, "Unsupported mark #{mark}" unless mark == 'insert'
+
+    @cursor = offset_for(index)
+  end
+
+  def see(_index); end
+
+  def edit_separator; end
+
+  def tag_add(tag, start_index, end_index)
+    @applied_tags << [tag, start_index.to_s, end_index.to_s]
+    return unless tag == 'sel'
+
+    @selection = [offset_for(start_index), offset_for(end_index)]
+  end
+
+  def tag_remove(tag, start_index, end_index)
+    @selection = nil if tag == 'sel'
+    line = start_index.to_s.split('.').first
+    @applied_tags.reject! { |name, start, _finish| name == tag && start.split('.').first == line }
+  end
+
+  def tag_ranges(tag)
+    return [] unless tag == 'sel' && @selection
+
+    [index(@selection[0]), index(@selection[1])]
+  end
+
+  def tag_names
+    @applied_tags.map(&:first).uniq
+  end
+
+  def edit_reset; end
+
+  def tag_configure(*_args, **_kwargs); end
+
+  def tag_raise(*_args); end
+
+  def configure(*_args, **_kwargs); end
+
+  def background(*_args); end
+
+  def foreground(*_args); end
+
+  def yview
+    [0.0, 1.0]
+  end
+
+  def yview_moveto(_position); end
+
+  def tagged?(name)
+    @applied_tags.any? { |tag, _start, _finish| tag == name }
+  end
+
+  private
+
+  # Tk 'end' is one past the last character (virtual trailing newline).
+  # Slice/insert/delete must clamp to the real string so delete('1.0', 'end')
+  # matches the widget instead of concatenating a nil tail.
+  def content_offset(index)
+    offset_for(index).clamp(0, @value.length)
+  end
+
+  def line_count
+    @value.count("\n") + 1
+  end
+
+  def offset_for(index)
+    case index
+    when Integer
+      index
+    when '1.0'
+      0
+    when 'end'
+      @value.length + 1
+    when 'end - 1 char'
+      @value.length
+    when 'insert'
+      @cursor
+    when 'sel.first'
+      raise ArgumentError, 'No selection' unless @selection
+
+      @selection[0]
+    when 'sel.last'
+      raise ArgumentError, 'No selection' unless @selection
+
+      @selection[1]
+    else
+      if (match = /\A(\d+)\.(\d+)\z/.match(index))
+        line = match[1].to_i
+        column = match[2].to_i
+        lines = @value.split("\n", -1)
+        lines.first(line - 1).sum { |text| text.length + 1 } + column
+      elsif (match = /\A(\d+)\.end\z/.match(index))
+        line = match[1].to_i
+        lines = @value.split("\n", -1)
+        lines.first(line).sum { |text| text.length + 1 } - 1
+      elsif (match = /\A1\.0 \+ (\d+) chars\z/.match(index))
+        match[1].to_i
+      elsif (match = /\A(.+) \+ (\d+) chars\z/.match(index))
+        offset_for(match[1]) + match[2].to_i
+      elsif (match = /\A(.+) \+ (\d+) char\z/.match(index))
+        offset_for(match[1]) + match[2].to_i
+      elsif (match = /\A(.+) - (\d+) chars\z/.match(index))
+        offset_for(match[1]) - match[2].to_i
+      elsif (match = /\A(.+) - (\d+) char\z/.match(index))
+        offset_for(match[1]) - match[2].to_i
+      else
+        raise ArgumentError, "Unsupported text index #{index.inspect}"
+      end
+    end
+  end
+end
+
+class FakeEditor
+  attr_reader :text, :highlighter, :app
+
+  def initialize(text = '')
+    @text = FakeText.new(text)
+    @highlighter = MarkdownHighlighter.new(@text)
+    @app = Object.new
+    @app.define_singleton_method(:update_header_list) {}
+  end
+
+  def reset_auto_close_tracking
+  end
+end
+
+class FakeNotebook
+  attr_reader :configured_text
+
+  def itemconfigure(_tab_frame, text:)
+    @configured_text = text
+  end
+end
+
+class FakeLabel
+  attr_accessor :text
+end
+
+class MarkdownHighlighterRegressionTest < Minitest::Test
+  def setup
+    @text = FakeText.new
+    @highlighter = MarkdownHighlighter.new(@text)
+  end
+
+  def test_headers_support_levels_one_through_six
+    @text.value = "# One\n## Two\n### Three\n#### Four\n##### Five\n###### Six"
+
+    @highlighter.parse_entire_document
+
+    assert_equal [1, 2, 3, 4, 5, 6], @highlighter.get_headers.map { |header| header[:line] }
+  end
+
+  def test_inline_and_block_markdown_tags
+    @text.value = "**bold** *italic* ***both*** `code` ~~strike~~\n> quote\n---"
+    @text.mark_set('insert', '1.0')
+
+    @highlighter.parse_entire_document
+
+    assert @text.tagged?('bold')
+    assert @text.tagged?('italic')
+    assert @text.tagged?('bold_italic')
+    assert @text.tagged?('code')
+    assert @text.tagged?('strikethrough')
+    assert @text.tagged?('blockquote')
+    assert @text.tagged?('hr')
+  end
+
+  def test_hr_stays_editable_while_cursor_is_on_the_line
+    @text.value = '---'
+    @text.mark_set('insert', '1.0')
+
+    @highlighter.parse_line(1, false)
+
+    refute @text.tagged?('hr')
+    assert @text.tagged?('md_symbol')
+  end
+end
+
+class FindReplaceRegressionTest < Minitest::Test
+  def test_backward_find_wraps_to_last_match
+    editor = FakeEditor.new('alpha beta alpha')
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('alpha'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
+
+    editor.text.mark_set('insert', '1.0')
+    dialog.find(:backward)
+
+    assert_equal '1.11', editor.text.index('sel.first')
+    assert_equal '1.16', editor.text.index('sel.last')
+  end
+
+  def test_replace_current_marks_the_document_dirty
+    editor = FakeEditor.new('alpha')
+    editor.text.tag_add('sel', '1.0', '1.5')
+    marked = false
+    editor.app.define_singleton_method(:mark_modified) { marked = true }
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('beta'))
+    dialog.define_singleton_method(:find) { |_direction| }
+
+    dialog.replace_current
+
+    assert marked
+    assert_equal 'beta', editor.text.value
+  end
+
+  def test_replace_all_marks_dirty_only_when_text_changes
+    editor = FakeEditor.new('alpha alpha')
+    marked = false
+    editor.app.define_singleton_method(:mark_modified) { marked = true }
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('alpha'))
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('beta'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
+
+    dialog.replace_all
+
+    assert marked
+    assert_equal 'beta beta', editor.text.value
+  end
+end
+
+class EditorPaneRegressionTest < Minitest::Test
+  def test_italic_without_selection_creates_a_pair_and_places_cursor_inside
+    pane = EditorPane.allocate
+    text = FakeText.new
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+
+    pane.insert_italic
+
+    assert_equal '**', text.value
+    assert_equal 1, text.cursor
+  end
+
+  def test_duplicate_line_handles_an_empty_line
+    pane = EditorPane.allocate
+    text = FakeText.new("first\n\nthird")
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+
+    text.mark_set('insert', '2.0')
+    pane.duplicate_line
+
+    assert_equal "first\n\n\nthird", text.value
+  end
+
+  def test_duplicate_line_marks_the_document_dirty
+    pane = EditorPane.allocate
+    text = FakeText.new("alpha\nbeta")
+    marked = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+
+    text.mark_set('insert', '1.0')
+    pane.duplicate_line
+
+    assert marked
+    assert_equal "alpha\nalpha\nbeta", text.value
+  end
+
+  def test_move_line_up_swaps_with_the_line_above_and_marks_dirty
+    pane = EditorPane.allocate
+    text = FakeText.new("alpha\nbeta")
+    marked = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+
+    text.mark_set('insert', '2.0')
+    pane.move_line_up
+
+    assert marked
+    assert_equal "beta\nalpha", text.value
+    assert_equal '1.0', text.index('insert')
+  end
+
+  def test_hr_shortcut_drops_mirrored_asterisks
+    pane = EditorPane.allocate
+    text = FakeText.new('******')
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    app.define_singleton_method(:last_keypress_time=) { |_value| }
+    highlighter = Object.new
+    highlighter.define_singleton_method(:parse_line) { |_line_num, _force = false| }
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, highlighter)
+
+    text.mark_set('insert', '1.3')
+    pane.handle_return
+
+    assert_equal '***', text.value
+  end
+end
+
+class FakeTextRegressionTest < Minitest::Test
+  def test_delete_through_end_clears_the_buffer
+    text = FakeText.new('hello')
+    text.delete('1.0', 'end')
+    assert_equal '', text.value
+  end
+end
+
+class FileOperationRegressionTest < Minitest::Test
+  def test_open_file_loads_contents_and_marks_document_clean
+    Tempfile.create(['rubyknotte', '.md']) do |file|
+      file.write("# Heading\n\nHello")
+      file.flush
+
+      editor = MarkdownEditor.allocate
+      fake_editor = FakeEditor.new
+      notebook = FakeNotebook.new
+      status_center = FakeLabel.new
+      status_left = FakeLabel.new
+      backup_file = File.join(File.dirname(file.path), 'recovery.md')
+
+      editor.instance_variable_set(:@editor, fake_editor)
+      editor.instance_variable_set(:@notebook, notebook)
+      editor.instance_variable_set(:@tab_frame, Object.new)
+      editor.instance_variable_set(:@status_center, status_center)
+      editor.instance_variable_set(:@status_left, status_left)
+      editor.instance_variable_set(:@is_modified, true)
+      editor.instance_variable_set(:@backup_file, backup_file)
+
+      editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
+      editor.define_singleton_method(:update_header_list) {}
+      editor.define_singleton_method(:update_current_header) {}
+      editor.define_singleton_method(:rotate_backups) {}
+      Tk.define_singleton_method(:getOpenFile) { |**_kwargs| file.path }
+
+      editor.open_file
+
+      assert_equal "# Heading\n\nHello", fake_editor.text.value
+      refute editor.is_modified
+      assert_equal File.basename(file.path), status_center.text
+    end
+  end
+
+  def test_open_file_aborts_when_discard_is_cancelled
+    editor = MarkdownEditor.allocate
+    fake_editor = FakeEditor.new('keep me')
+    editor.instance_variable_set(:@editor, fake_editor)
+    editor.instance_variable_set(:@is_modified, true)
+    Tk.define_singleton_method(:messageBox) { |**_kwargs| 'cancel' }
+    Tk.define_singleton_method(:getOpenFile) { raise 'file dialog should not open' }
+
+    editor.open_file
+
+    assert_equal 'keep me', fake_editor.text.value
+    assert editor.is_modified
+  end
+
+  def test_new_file_clears_buffer_after_discard
+    editor = MarkdownEditor.allocate
+    fake_editor = FakeEditor.new('old text')
+    notebook = FakeNotebook.new
+    status_center = FakeLabel.new
+    status_left = FakeLabel.new
+
+    editor.instance_variable_set(:@editor, fake_editor)
+    editor.instance_variable_set(:@notebook, notebook)
+    editor.instance_variable_set(:@tab_frame, Object.new)
+    editor.instance_variable_set(:@status_center, status_center)
+    editor.instance_variable_set(:@status_left, status_left)
+    editor.instance_variable_set(:@is_modified, true)
+
+    editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
+    editor.define_singleton_method(:rotate_backups) {}
+    editor.define_singleton_method(:update_status_left) {}
+    editor.define_singleton_method(:update_current_header) {}
+
+    editor.new_file
+
+    assert_equal '', fake_editor.text.value
+    refute editor.is_modified
+    assert_equal 'Untitled.md', notebook.configured_text
+  end
+end
+
+class QuitRegressionTest < Minitest::Test
+  def test_save_and_quit_does_not_exit_when_save_does_not_clear_modified_state
+    editor = MarkdownEditor.allocate
+    root = Object.new
+    destroyed = false
+    root.define_singleton_method(:destroy) { destroyed = true }
+
+    editor.instance_variable_set(:@root, root)
+    editor.instance_variable_set(:@is_modified, true)
+    editor.define_singleton_method(:save_file) {}
+    Tk.define_singleton_method(:messageBox) { |**_kwargs| 'yes' }
+
+    editor.quit_app
+
+    refute destroyed
+  end
+end
+
+class UserSettingsRegressionTest < Minitest::Test
+  def test_defaults_when_file_is_missing
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      settings = UserSettings.new(File.join(dir, 'settings.json'))
+
+      assert_equal :sepia, settings[:theme]
+      assert_equal 12, settings[:font_size]
+      assert_equal 4, settings[:line_spacing]
+      assert_equal 25, settings[:text_padding_x]
+      assert_equal 20, settings[:text_padding_y]
+    end
+  end
+
+  def test_roundtrip_persists_theme_zoom_spacing_and_padding
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      settings = UserSettings.new(path)
+      settings.replace(
+        theme: :dark,
+        font_size: 16,
+        line_spacing: 8,
+        text_padding_x: 30,
+        text_padding_y: 24
+      )
+
+      assert settings.save
+
+      loaded = UserSettings.new(path)
+      assert_equal :dark, loaded[:theme]
+      assert_equal 16, loaded[:font_size]
+      assert_equal 8, loaded[:line_spacing]
+      assert_equal 30, loaded[:text_padding_x]
+      assert_equal 24, loaded[:text_padding_y]
+    end
+  end
+
+  def test_unknown_theme_falls_back_to_sepia
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"theme":"neon","font_size":14}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal :sepia, settings[:theme]
+      assert_equal 14, settings[:font_size]
+    end
+  end
+
+  def test_corrupt_json_uses_defaults
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{not json')
+
+      settings = UserSettings.new(path)
+
+      assert_equal UserSettings::DEFAULTS, settings.to_h
+    end
+  end
+
+  def test_clamps_out_of_range_values
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"font_size":99,"line_spacing":-3,"text_padding_x":1}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal 24, settings[:font_size]
+      assert_equal 0, settings[:line_spacing]
+      assert_equal 2, settings[:text_padding_x]
+    end
+  end
+
+  def test_non_finite_numbers_fall_back_instead_of_raising
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      File.write(path, '{"font_size":1e999,"line_spacing":1e999,"text_padding_x":1e999}')
+
+      settings = UserSettings.new(path)
+
+      assert_equal 12, settings[:font_size]
+      assert_equal 4, settings[:line_spacing]
+      assert_equal 25, settings[:text_padding_x]
+      assert_equal 20, settings[:text_padding_y]
+    end
+  end
+end
+
+class PersistSettingsRegressionTest < Minitest::Test
+  def test_persist_settings_writes_current_editor_values
+    Dir.mktmpdir('rubyknotte-settings') do |dir|
+      path = File.join(dir, 'settings.json')
+      editor = MarkdownEditor.allocate
+      editor.instance_variable_set(:@settings, UserSettings.new(path))
+      editor.instance_variable_set(:@current_theme, :dark)
+      editor.instance_variable_set(:@base_font_size, 18)
+      editor.instance_variable_set(:@line_spacing, 6)
+      editor.instance_variable_set(:@text_padding_x, 27)
+      editor.instance_variable_set(:@text_padding_y, 22)
+
+      assert editor.persist_settings
+
+      loaded = UserSettings.new(path)
+      assert_equal :dark, loaded[:theme]
+      assert_equal 18, loaded[:font_size]
+      assert_equal 6, loaded[:line_spacing]
+      assert_equal 27, loaded[:text_padding_x]
+      assert_equal 22, loaded[:text_padding_y]
+    end
+  end
+
+  def test_persist_settings_is_a_noop_without_settings
+    editor = MarkdownEditor.allocate
+    editor.instance_variable_set(:@settings, nil)
+
+    refute editor.persist_settings
+  end
+
+  def test_spacing_and_padding_stop_at_the_saved_maximum
+    editor = MarkdownEditor.allocate
+    editor.instance_variable_set(:@line_spacing, 40)
+    editor.instance_variable_set(:@text_padding_x, 100)
+    editor.instance_variable_set(:@text_padding_y, 100)
+    editor.define_singleton_method(:apply_font_settings) {}
+    editor.define_singleton_method(:persist_settings) { true }
+
+    editor.change_spacing(2)
+    editor.change_text_padding(2)
+
+    assert_equal 40, editor.instance_variable_get(:@line_spacing)
+    assert_equal 100, editor.instance_variable_get(:@text_padding_x)
+    assert_equal 100, editor.instance_variable_get(:@text_padding_y)
+  end
+end
+
+class RecoveryRegressionTest < Minitest::Test
+  def setup_editor(dir)
+    editor = MarkdownEditor.allocate
+    fake = FakeEditor.new
+    notebook = FakeNotebook.new
+    status_center = FakeLabel.new
+    status_left = FakeLabel.new
+    editor.instance_variable_set(:@editor, fake)
+    editor.instance_variable_set(:@notebook, notebook)
+    editor.instance_variable_set(:@tab_frame, Object.new)
+    editor.instance_variable_set(:@status_center, status_center)
+    editor.instance_variable_set(:@status_left, status_left)
+    editor.instance_variable_set(:@backup_dir, dir)
+    editor.instance_variable_set(:@backup_file, File.join(dir, 'recovery.md'))
+    editor.instance_variable_set(:@recovery_meta, File.join(dir, 'recovery.json'))
+    editor.instance_variable_set(:@recovery_lock, File.join(dir, 'recovery.pid'))
+    editor.instance_variable_set(:@recovery_writer, true)
+    editor.instance_variable_set(:@current_filename, 'Untitled.md')
+    editor.instance_variable_set(:@current_filepath, nil)
+    editor.instance_variable_set(:@is_modified, false)
+    editor.define_singleton_method(:update_header_list) {}
+    editor.define_singleton_method(:update_status_left) {}
+    editor.define_singleton_method(:update_current_header) {}
+    editor
+  end
+
+  def test_rotate_moves_text_and_sidecar
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      File.write(editor.instance_variable_get(:@backup_file), "# Kept\n\nbody")
+      File.write(editor.instance_variable_get(:@recovery_meta), '{"filename":"notes.md"}')
+
+      editor.rotate_backups
+
+      refute File.exist?(File.join(dir, 'recovery.md'))
+      refute File.exist?(File.join(dir, 'recovery.json'))
+      assert_equal "# Kept\n\nbody", File.read(File.join(dir, 'recovery.md.bak'))
+      assert_equal '{"filename":"notes.md"}', File.read(File.join(dir, 'recovery.json.bak'))
+    end
+  end
+
+  def test_declining_startup_restore_rotates_and_accepting_keeps_the_file
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      recovery = editor.instance_variable_get(:@backup_file)
+      File.write(recovery, "# Crash\n\nstill here")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+
+      editor.apply_startup_recovery_choice('no')
+      assert File.exist?(File.join(dir, 'recovery.md.bak'))
+      refute File.exist?(recovery)
+
+      File.write(recovery, "# Crash\n\nstill here")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+      editor.apply_startup_recovery_choice('yes')
+
+      assert File.exist?(recovery)
+      assert_equal "# Crash\n\nstill here", editor.instance_variable_get(:@editor).text.value
+      assert_equal '/tmp/notes.md', editor.instance_variable_get(:@current_filepath)
+      assert_equal 'notes.md', editor.instance_variable_get(:@current_filename)
+      assert editor.is_modified
+    end
+  end
+
+  def test_new_file_does_not_rotate_recovery
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      fake = editor.instance_variable_get(:@editor)
+      fake.text.value = 'old text'
+      editor.instance_variable_set(:@is_modified, true)
+      editor.define_singleton_method(:confirm_discard_changes) { |_label| true }
+      File.write(editor.instance_variable_get(:@backup_file), 'crash text')
+
+      editor.new_file
+
+      assert_equal '', fake.text.value
+      assert_equal 'crash text', File.read(editor.instance_variable_get(:@backup_file))
+    end
+  end
+
+  def test_summary_includes_source_time_size_and_first_line
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      path = editor.instance_variable_get(:@backup_file)
+      File.write(path, "\n# Hello recovery\n\nmore")
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('filename' => 'notes.md'))
+
+      summary = editor.recovery_summary(path, 'Latest')
+
+      assert_includes summary, 'Latest: notes.md'
+      assert_includes summary, '# Hello recovery'
+      assert_includes summary, 'B'
+    end
+  end
+
+  def test_save_clears_current_recovery_but_not_the_previous_copy
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'notes.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'unsaved')
+      File.write(editor.instance_variable_get(:@recovery_meta), '{}')
+      File.write("#{editor.instance_variable_get(:@backup_file)}.bak", 'older')
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+      editor.instance_variable_get(:@editor).text.value = 'saved text'
+
+      editor.save_file
+
+      assert_equal 'saved text', File.read(note)
+      refute File.exist?(editor.instance_variable_get(:@backup_file))
+      refute File.exist?(editor.instance_variable_get(:@recovery_meta))
+      assert_equal 'older', File.read("#{editor.instance_variable_get(:@backup_file)}.bak")
+      refute editor.is_modified
+    end
+  end
+
+  def test_save_keeps_recovery_that_belongs_to_a_different_file
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'other.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'crash text')
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => '/tmp/notes.md', 'filename' => 'notes.md'))
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'other.md')
+      editor.instance_variable_get(:@editor).text.value = 'other text'
+
+      editor.save_file
+
+      assert_equal 'crash text', File.read(editor.instance_variable_get(:@backup_file))
+      assert File.exist?(editor.instance_variable_get(:@recovery_meta))
+    end
+  end
+
+  def test_backup_writes_sidecar_with_the_open_path
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      editor.instance_variable_set(:@current_filepath, '/tmp/notes.md')
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+
+      editor.write_backup_atomic("# Note\n")
+
+      meta = JSON.parse(File.read(editor.instance_variable_get(:@recovery_meta)))
+      assert_equal '/tmp/notes.md', meta['path']
+      assert_equal 'notes.md', meta['filename']
+      assert_equal "# Note\n", File.read(editor.instance_variable_get(:@backup_file))
+    end
+  end
+
+  def test_second_window_does_not_take_a_live_lock
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      pid = Process.spawn('sleep', '30')
+      begin
+        editor = setup_editor(dir)
+        File.write(editor.instance_variable_get(:@recovery_lock), "#{pid}\n")
+
+        editor.claim_recovery_lock
+
+        refute editor.instance_variable_get(:@recovery_writer)
+        assert_equal pid.to_s, File.read(editor.instance_variable_get(:@recovery_lock)).strip
+      ensure
+        Process.kill('TERM', pid)
+        Process.wait(pid)
+      end
+    end
+  end
+
+  def test_dead_lock_can_be_claimed
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      pid = Process.spawn('sleep', '0.2')
+      Process.wait(pid)
+      editor = setup_editor(dir)
+      File.write(editor.instance_variable_get(:@recovery_lock), "#{pid}\n")
+
+      editor.claim_recovery_lock
+
+      assert editor.instance_variable_get(:@recovery_writer)
+      assert_equal Process.pid.to_s, File.read(editor.instance_variable_get(:@recovery_lock)).strip
+      editor.release_recovery_lock
+      refute File.exist?(editor.instance_variable_get(:@recovery_lock))
+    end
+  end
 end
