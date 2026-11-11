@@ -19,7 +19,12 @@ jobs:
           ruby-version: '4.0.5'
 
       - name: Check Ruby syntax
-        run: ruby -c tknote.rb
+        run: |
+          ruby -c tknote.rb
+          # Syntax-check any module files that exist (lib/ or flat)
+          for f in lib/*.rb *.rb; do
+            [ -f "$f" ] && [ "$f" != "tknote.rb" ] && ruby -c "$f"
+          done
 
       - name: Run regression tests
         run: ruby -Itest test/regression_test.rb
