@@ -3,12 +3,21 @@ require 'tkextlib/tile'
 require 'fileutils'
 require 'json'
 
-require_relative 'lib/theme'
-require_relative 'lib/user_settings'
-require_relative 'lib/markdown_highlighter'
-require_relative 'lib/find_replace_dialog'
-require_relative 'lib/editor_pane'
-require_relative 'lib/markdown_editor'
+# Detect the directory this script lives in, then load the modules from
+# a lib/ subdirectory if it exists, otherwise from the same directory.
+# This lets the files sit either under lib/ or flat next to tknote.rb.
+script_dir = File.expand_path(File.dirname(__FILE__))
+lib_dir = File.join(script_dir, 'lib')
+load_dir = Dir.exist?(lib_dir) ? lib_dir : script_dir
+
+$LOAD_PATH.unshift(load_dir) unless $LOAD_PATH.include?(load_dir)
+
+require 'theme'
+require 'user_settings'
+require 'markdown_highlighter'
+require 'find_replace_dialog'
+require 'editor_pane'
+require 'markdown_editor'
 
 # ==========================================
 # APP ENTRY POINT WITH CRASH HANDLER
