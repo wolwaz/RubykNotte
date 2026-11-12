@@ -1,16 +1,8 @@
 # frozen_string_literal: true
 
+# Colors only. Fonts, padding, and widget styles live with the control
+# that uses them.
 module Theme
-  SPACING = {
-    xs: 2, sm: 6, md: 8, lg: 12, xl: 16,
-    editor_x: 25, editor_y: 20
-  }
-
-  FONTS = {
-    ui: ['Noto Sans', 10],
-    editor: ['Noto Sans', 12]
-  }
-
   THEMES = {
     sepia: {
       window_bg: '#EFE6D2', toolbar_bg: '#E8DDC7', status_bg: '#E8DDC7',
