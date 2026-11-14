@@ -3,14 +3,12 @@ require 'tkextlib/tile'
 require 'fileutils'
 require 'json'
 
-# Detect the directory this script lives in, then load the modules from
-# a lib/ subdirectory if it exists, otherwise from the same directory.
-# This lets the files sit either under lib/ or flat next to tknote.rb.
+# Search lib/ first, then the directory this script lives in.
+# A module can sit in either place.
 script_dir = File.expand_path(File.dirname(__FILE__))
 lib_dir = File.join(script_dir, 'lib')
-load_dir = Dir.exist?(lib_dir) ? lib_dir : script_dir
-
-$LOAD_PATH.unshift(load_dir) unless $LOAD_PATH.include?(load_dir)
+$LOAD_PATH.unshift(script_dir) unless $LOAD_PATH.include?(script_dir)
+$LOAD_PATH.unshift(lib_dir) if Dir.exist?(lib_dir) && !$LOAD_PATH.include?(lib_dir)
 
 require 'theme'
 require 'user_settings'
