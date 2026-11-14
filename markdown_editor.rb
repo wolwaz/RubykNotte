@@ -306,6 +306,8 @@ class MarkdownEditor
   end
 
   def update_window_title
+    return unless @root
+
     star = @is_modified ? '* ' : ''
     @root.title = "#{star}#{@current_filename} — RubykNotte"
   end

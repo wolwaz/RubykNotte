@@ -492,7 +492,7 @@ class FileOperationRegressionTest < Minitest::Test
 
     assert_equal '', fake_editor.text.value
     refute editor.is_modified
-    assert_equal 'Untitled.md', notebook.configured_text
+    assert_equal 'Untitled.md', status_center.text
   end
 end
 
