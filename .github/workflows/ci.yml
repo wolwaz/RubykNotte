@@ -27,4 +27,4 @@ jobs:
           done
 
       - name: Run regression tests
-        run: ruby -I. -Ilib -Itest test/regression_test.rb
+        run: ruby -I. -Ilib -Itest -rjson -rfileutils test/regression_test.rb
