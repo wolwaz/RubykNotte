@@ -31,6 +31,7 @@ class MarkdownEditor
     @backup_file = File.join(@backup_dir, 'recovery.md')
     @recovery_meta = File.join(@backup_dir, 'recovery.json')
     @recovery_lock = File.join(@backup_dir, 'recovery.pid')
+    @recovery_lock_io = nil
     @recovery_writer = false
     Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
 
@@ -140,12 +141,26 @@ class MarkdownEditor
 
   def claim_recovery_lock
     @recovery_writer = false
-    if File.exist?(@recovery_lock)
-      pid = Integer(File.read(@recovery_lock).strip) rescue 0
-      return if pid > 0 && pid != Process.pid && process_alive?(pid)
+    Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
+
+    io = File.open(@recovery_lock, File::RDWR | File::CREAT, 0644)
+    unless io.flock(File::LOCK_EX | File::LOCK_NB)
+      io.close
+      return
     end
 
-    File.write(@recovery_lock, "#{Process.pid}\n")
+    pid = Integer(io.read.to_s.strip) rescue 0
+    if pid > 0 && pid != Process.pid && process_alive?(pid)
+      io.flock(File::LOCK_UN)
+      io.close
+      return
+    end
+
+    io.rewind
+    io.truncate(0)
+    io.write("#{Process.pid}\n")
+    io.flush
+    @recovery_lock_io = io
     @recovery_writer = true
   end
 
@@ -165,6 +180,9 @@ class MarkdownEditor
     File.delete(@recovery_lock) if current == Process.pid.to_s
   rescue SystemCallError
     nil
+  ensure
+    @recovery_lock_io&.close
+    @recovery_lock_io = nil
   end
 
   def recovery_has_text?(path)
@@ -528,12 +546,12 @@ class MarkdownEditor
 
     Tk::Tile::Separator.new(@toolbar) { orient 'vertical' }.pack(side: 'left', fill: 'y', padx: 6, pady: 2)
 
-    undo_btn_cmd = proc { @editor.text.edit_undo rescue nil }
+    undo_btn_cmd = proc { @editor.undo_edit }
     @callback_refs << undo_btn_cmd
     @undo_btn = Tk::Tile::Button.new(@toolbar) { text "Undo"; style 'Toolbar.TButton'; command undo_btn_cmd }
     @undo_btn.pack(side: 'left', padx: 2, pady: 2)
 
-    redo_btn_cmd = proc { @editor.text.edit_redo rescue nil }
+    redo_btn_cmd = proc { @editor.redo_edit }
     @callback_refs << redo_btn_cmd
     @redo_btn = Tk::Tile::Button.new(@toolbar) { text "Redo"; style 'Toolbar.TButton'; command redo_btn_cmd }
     @redo_btn.pack(side: 'left', padx: 2, pady: 2)
@@ -978,7 +996,7 @@ class MarkdownEditor
     end
 
     begin
-      File.write(@current_filepath, @editor.text.get('1.0', 'end - 1 char'), encoding: 'UTF-8')
+      write_document_atomic(@current_filepath, @editor.text.get('1.0', 'end - 1 char'))
     rescue => e
       Tk.messageBox(type: 'ok', icon: 'error', title: "Error Saving File", message: e.message)
       return
@@ -989,6 +1007,18 @@ class MarkdownEditor
     update_window_title
     update_status_left
     clear_current_recovery
+  end
+
+  def write_document_atomic(path, content)
+    destination = File.exist?(path) ? File.realpath(path) : path
+    tmp = File.join(File.dirname(destination), ".#{File.basename(destination)}.#{Process.pid}.tmp")
+    mode = (File.stat(destination).mode & 0777) if File.exist?(destination)
+    File.write(tmp, content, encoding: 'UTF-8')
+    File.chmod(mode, tmp) if mode
+    FileUtils.mv(tmp, destination)
+  rescue StandardError
+    File.delete(tmp) if tmp && File.exist?(tmp)
+    raise
   end
 
   def save_as_file

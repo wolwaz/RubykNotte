@@ -3,6 +3,7 @@
 require 'minitest/autorun'
 require 'tempfile'
 require 'tmpdir'
+require 'rbconfig'
 
 # Stub Tk before loading the application modules so the classes can be
 # defined without a real GUI.
@@ -287,6 +288,27 @@ class FindReplaceRegressionTest < Minitest::Test
     assert_equal '1.16', editor.text.index('sel.last')
   end
 
+  def test_forward_find_keeps_a_match_that_starts_at_the_cursor
+    editor = FakeEditor.new('apple apple')
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('apple'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
+
+    editor.text.mark_set('insert', '1.0')
+    dialog.find(:forward)
+
+    assert_equal '1.0', editor.text.index('sel.first')
+    assert_equal '1.5', editor.text.index('sel.last')
+
+    dialog.find(:forward)
+
+    assert_equal '1.6', editor.text.index('sel.first')
+    assert_equal '1.11', editor.text.index('sel.last')
+  end
+
   def test_replace_current_marks_the_document_dirty
     editor = FakeEditor.new('alpha')
     editor.text.tag_add('sel', '1.0', '1.5')
@@ -409,6 +431,73 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.handle_return
 
     assert_equal '***', text.value
+  end
+
+  def test_undo_marks_the_document_dirty_and_refreshes
+    pane = EditorPane.allocate
+    text = FakeText.new('saved')
+    marked = false
+    refreshed = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    app.define_singleton_method(:last_keypress_time=) { |_value| }
+    app.define_singleton_method(:update_current_header) { refreshed = true }
+    app.define_singleton_method(:update_status_left) {}
+    highlighter = Object.new
+    highlighter.define_singleton_method(:parse_current_line) {}
+    highlighter.define_singleton_method(:rebuild_headers_cache) {}
+    text.define_singleton_method(:edit_undo) { text.value = 'undone' }
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, highlighter)
+
+    pane.undo_edit
+
+    assert marked
+    assert refreshed
+    assert_equal 'undone', text.value
+  end
+
+  def test_undo_does_nothing_when_there_is_no_history
+    pane = EditorPane.allocate
+    text = FakeText.new('saved')
+    marked = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    app.define_singleton_method(:last_keypress_time=) { |_value| }
+    text.define_singleton_method(:edit_undo) { raise 'nothing to undo' }
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+
+    pane.undo_edit
+
+    refute marked
+    assert_equal 'saved', text.value
+  end
+
+  def test_note_paste_marks_dirty_and_reparses
+    pane = EditorPane.allocate
+    text = FakeText.new('pasted')
+    marked = false
+    parsed = false
+    app = Object.new
+    app.define_singleton_method(:mark_modified) { marked = true }
+    app.define_singleton_method(:last_keypress_time=) { |_value| }
+    app.define_singleton_method(:update_header_list) {}
+    app.define_singleton_method(:update_status_left) {}
+    highlighter = Object.new
+    highlighter.define_singleton_method(:parse_entire_document) { parsed = true }
+
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, highlighter)
+
+    pane.note_paste
+
+    assert marked
+    assert parsed
   end
 end
 
@@ -827,6 +916,59 @@ class RecoveryRegressionTest < Minitest::Test
       assert_equal Process.pid.to_s, File.read(editor.instance_variable_get(:@recovery_lock)).strip
       editor.release_recovery_lock
       refute File.exist?(editor.instance_variable_get(:@recovery_lock))
+    end
+  end
+
+  def test_a_held_lock_is_not_stolen_from_a_dead_pid
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      dead = Process.spawn('sleep', '0.2')
+      Process.wait(dead)
+      editor = setup_editor(dir)
+      lock = editor.instance_variable_get(:@recovery_lock)
+      File.write(lock, "#{dead}\n")
+      read_io, write_io = IO.pipe
+      holder = Process.spawn(
+        RbConfig.ruby, '-e',
+        'file = File.open(ARGV[0], File::RDWR); file.flock(File::LOCK_EX); $stdout.write("held\n"); $stdout.flush; sleep 30',
+        lock,
+        out: write_io
+      )
+      write_io.close
+      begin
+        assert_equal "held\n", read_io.gets
+
+        editor.claim_recovery_lock
+
+        refute editor.instance_variable_get(:@recovery_writer)
+        assert_equal dead.to_s, File.read(lock).strip
+      ensure
+        begin
+          Process.kill('TERM', holder)
+        rescue Errno::ESRCH
+          nil
+        end
+        Process.wait(holder) rescue nil
+        read_io.close
+      end
+    end
+  end
+
+  def test_save_replaces_the_file_without_leaving_a_temp
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'notes.md')
+      File.write(note, 'old text')
+      File.chmod(0o600, note)
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+      editor.instance_variable_get(:@editor).text.value = 'new text'
+
+      editor.save_file
+
+      assert_equal 'new text', File.read(note)
+      assert_equal 0o600, File.stat(note).mode & 0o777
+      refute Dir.children(dir).any? { |name| name.include?('.tmp') }
+      refute editor.is_modified
     end
   end
 end

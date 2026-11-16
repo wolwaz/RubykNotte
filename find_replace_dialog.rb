@@ -97,9 +97,29 @@ class FindReplaceDialog
   end
 
   def cursor_char_offset
-    n = @text.count('1.0', 'insert', 'chars')
+    index_char_offset('insert')
+  end
+
+  def index_char_offset(index)
+    n = @text.count('1.0', index, 'chars')
     n = n.first if n.is_a?(Array)
     (n || 0).to_i
+  end
+
+  def forward_start_offset
+    if @text.tag_ranges('sel').any?
+      index_char_offset('sel.last')
+    else
+      cursor_char_offset
+    end
+  end
+
+  def backward_limit_offset
+    if @text.tag_ranges('sel').any?
+      index_char_offset('sel.first')
+    else
+      cursor_char_offset
+    end
   end
 
   def char_offset_to_index(char_offset)
@@ -123,19 +143,20 @@ class FindReplaceDialog
     end
 
     text = document_text
-    char_offset = cursor_char_offset
     m = nil
 
     if direction == :forward
-      m = regex.match(text, char_offset + 1)
-      m ||= regex.match(text, 0)
+      start = forward_start_offset
+      m = regex.match(text, start)
+      m ||= regex.match(text, 0) if start.positive?
     else
+      limit = backward_limit_offset
       last_before = nil
       last_overall = nil
       text.scan(regex) do
         cur = Regexp.last_match
         last_overall = cur
-        last_before = cur if cur.begin(0) < char_offset
+        last_before = cur if cur.begin(0) < limit
       end
       m = last_before || last_overall
     end

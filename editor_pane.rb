@@ -80,15 +80,15 @@ class EditorPane
     @callback_refs << ctrl_i
     @text.bind('Control-i', ctrl_i)
 
-    ctrl_z = proc { @text.edit_undo rescue nil; 'break' }
+    ctrl_z = proc { undo_edit; 'break' }
     @callback_refs << ctrl_z
     @text.bind('Control-z', ctrl_z)
 
-    ctrl_y = proc { @text.edit_redo rescue nil; 'break' }
+    ctrl_y = proc { redo_edit; 'break' }
     @callback_refs << ctrl_y
     @text.bind('Control-y', ctrl_y)
 
-    ctrl_shift_z = proc { @text.edit_redo rescue nil; 'break' }
+    ctrl_shift_z = proc { redo_edit; 'break' }
     @callback_refs << ctrl_shift_z
     @text.bind('Control-Z', ctrl_shift_z)
 
@@ -281,12 +281,14 @@ class EditorPane
     @callback_refs << key_release
     @text.bind('KeyRelease', key_release)
 
-    ctrl_v = proc {
-      paste_proc = proc { parse_after_paste }
-      Tk.after(100, &paste_proc)
-    }
+    ctrl_v = proc { schedule_paste_followup; nil }
     @callback_refs << ctrl_v
     @text.bind('Control-v', ctrl_v)
+
+    paste_followup = proc { schedule_paste_followup; nil }
+    @callback_refs << paste_followup
+    @text.bind('<<Paste>>', paste_followup)
+    @text.bind('<<PasteSelection>>', paste_followup)
   end
 
   def register_auto_close_mark
@@ -408,6 +410,42 @@ class EditorPane
       Tk.after(0, &return_proc)
       return
     end
+  end
+
+  def undo_edit
+    begin
+      @text.edit_undo
+    rescue StandardError
+      return
+    end
+    note_history_change
+  end
+
+  def redo_edit
+    begin
+      @text.edit_redo
+    rescue StandardError
+      return
+    end
+    note_history_change
+  end
+
+  def note_history_change
+    @app.last_keypress_time = Time.now
+    @app.mark_modified
+    parse_and_update
+  end
+
+  def schedule_paste_followup
+    paste_proc = proc { note_paste }
+    @callback_refs << paste_proc
+    Tk.after(0, &paste_proc)
+  end
+
+  def note_paste
+    @app.last_keypress_time = Time.now
+    @app.mark_modified
+    parse_after_paste
   end
 
   def parse_after_paste
