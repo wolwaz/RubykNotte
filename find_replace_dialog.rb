@@ -174,23 +174,88 @@ class FindReplaceDialog
   end
 
   def replace_current
-    if @text.tag_ranges('sel').any?
-      match_start = @text.index('sel.first')
-      match_end   = @text.index('sel.last')
-
-      @text.edit_separator
-      @text.replace(match_start, match_end, @replace_entry.value)
-      @text.edit_separator
-      @editor.app.mark_modified
-
-      @editor.highlighter.parse_entire_document
-      @editor.app.update_header_list
-
-      @text.mark_set('insert', match_start)
+    pattern_text = @find_entry.value.to_s
+    if pattern_text.empty?
       find(:forward)
-    else
-      find(:forward)
+      return
     end
+
+    begin
+      regex = build_pattern(pattern_text)
+    rescue RegexpError => e
+      Tk.messageBox(type: 'ok', icon: 'error', title: 'Invalid Pattern', message: e.message)
+      return
+    end
+
+    if (span = matching_selection(regex))
+      apply_replace(span[0], span[1], span[2])
+      return
+    end
+
+    # A non-matching selection is left alone. Replace should not rewrite it.
+    if @text.tag_ranges('sel').any?
+      find(:forward)
+      return
+    end
+
+    offset = cursor_char_offset
+    match = regex.match(document_text, offset)
+    if match && match.begin(0) == offset && match.end(0) == offset
+      apply_replace(char_offset_to_index(offset), char_offset_to_index(offset), match)
+      return
+    end
+
+    find(:forward)
+  end
+
+  def matching_selection(regex)
+    return nil unless @text.tag_ranges('sel').any?
+
+    start_offset = index_char_offset('sel.first')
+    end_offset = index_char_offset('sel.last')
+    match = regex.match(document_text, start_offset)
+    return nil unless match && match.begin(0) == start_offset && match.end(0) == end_offset
+
+    [@text.index('sel.first'), @text.index('sel.last'), match]
+  end
+
+  # Regex mode uses Ruby's gsub replacement rules (\1, \k<name>, and so on).
+  # Literal mode inserts the replacement text unchanged. Same split as replace_all.
+  def replacement_for(match)
+    raw = @replace_entry.value.to_s
+    return raw unless @use_regex.value == '1'
+
+    tail = match.string.byteslice(match.begin(0)..-1)
+    updated = tail.sub(match.regexp, raw)
+    consumed = match.end(0) - match.begin(0)
+    updated.byteslice(0, updated.bytesize - (tail.bytesize - consumed))
+  end
+
+  def apply_replace(start_index, end_index, match)
+    replacement = replacement_for(match)
+    zero_width = match.begin(0) == match.end(0)
+    @text.edit_separator
+    if zero_width
+      @text.insert(start_index, replacement)
+      if replacement.empty?
+        nxt = cursor_char_offset + 1
+        if nxt > document_text.length
+          @text.edit_separator
+          return
+        end
+        @text.mark_set('insert', char_offset_to_index(nxt))
+      else
+        @text.mark_set('insert', "#{start_index} + #{replacement.length} chars")
+      end
+    else
+      @text.replace(start_index, end_index, replacement)
+      @text.mark_set('insert', start_index)
+    end
+    @text.edit_separator
+    @editor.app.mark_modified if replacement != match[0]
+    @editor.highlighter.parse_entire_document
+    @editor.app.update_header_list
+    find(:forward)
   end
 
   def replace_all

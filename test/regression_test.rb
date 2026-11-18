@@ -46,6 +46,7 @@ class FakeText
     @selection = nil
     @state = 'normal'
     @applied_tags = []
+    @marks = {}
   end
 
   def value=(new_value)
@@ -53,6 +54,7 @@ class FakeText
     @cursor = 0
     @selection = nil
     @applied_tags = []
+    @marks = {}
   end
 
   def get(start_index, end_index)
@@ -75,8 +77,11 @@ class FakeText
 
   def insert(index, string)
     offset = content_offset(index)
-    @value = @value[0...offset] + string.to_s + @value[offset..]
-    @cursor = offset + string.to_s.length
+    text = string.to_s
+    @value = @value[0...offset] + text + @value[offset..]
+    shift = text.length
+    @marks.each_key { |name| @marks[name] += shift if @marks[name] >= offset }
+    @cursor = offset + shift
   end
 
   def replace(start_index, end_index, string)
@@ -91,10 +96,19 @@ class FakeText
   end
 
   def mark_set(mark, index)
-    raise ArgumentError, "Unsupported mark #{mark}" unless mark == 'insert'
-
-    @cursor = offset_for(index)
+    offset = offset_for(index)
+    if mark == 'insert'
+      @cursor = offset
+    else
+      @marks[mark] = offset
+    end
   end
+
+  def mark_unset(mark)
+    @marks.delete(mark)
+  end
+
+  def mark_gravity(_mark, _direction = nil); end
 
   def see(_index); end
 
@@ -179,6 +193,8 @@ class FakeText
 
       @selection[1]
     else
+      return @marks[index] if @marks.key?(index)
+
       if (match = /\A(\d+)\.(\d+)\z/.match(index))
         line = match[1].to_i
         column = match[2].to_i
@@ -317,13 +333,74 @@ class FindReplaceRegressionTest < Minitest::Test
     dialog = FindReplaceDialog.allocate
     dialog.instance_variable_set(:@editor, editor)
     dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('alpha'))
     dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('beta'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
     dialog.define_singleton_method(:find) { |_direction| }
 
     dialog.replace_current
 
     assert marked
     assert_equal 'beta', editor.text.value
+  end
+
+  def test_replace_current_does_not_replace_a_different_selection
+    editor = FakeEditor.new('banana')
+    editor.text.tag_add('sel', '1.0', '1.6')
+    marked = false
+    searched = false
+    editor.app.define_singleton_method(:mark_modified) { marked = true }
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('apple'))
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('pear'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('0'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('0'))
+    dialog.define_singleton_method(:find) { |_direction| searched = true }
+
+    dialog.replace_current
+
+    refute marked
+    assert searched
+    assert_equal 'banana', editor.text.value
+  end
+
+  def test_regex_replace_current_expands_a_capture
+    editor = FakeEditor.new('ab')
+    editor.text.tag_add('sel', '1.0', '1.2')
+    editor.app.define_singleton_method(:mark_modified) {}
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('a(b)'))
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('\1'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('1'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('1'))
+    dialog.define_singleton_method(:find) { |_direction| }
+
+    dialog.replace_current
+
+    assert_equal 'b', editor.text.value
+  end
+
+  def test_zero_width_replace_inserts_at_the_cursor
+    editor = FakeEditor.new('a')
+    editor.text.mark_set('insert', '1.0')
+    editor.app.define_singleton_method(:mark_modified) {}
+    dialog = FindReplaceDialog.allocate
+    dialog.instance_variable_set(:@editor, editor)
+    dialog.instance_variable_set(:@text, editor.text)
+    dialog.instance_variable_set(:@find_entry, Struct.new(:value).new('(?=a)'))
+    dialog.instance_variable_set(:@replace_entry, Struct.new(:value).new('X'))
+    dialog.instance_variable_set(:@match_case, Struct.new(:value).new('1'))
+    dialog.instance_variable_set(:@use_regex, Struct.new(:value).new('1'))
+    dialog.define_singleton_method(:find) { |_direction| }
+
+    dialog.replace_current
+
+    assert_equal 'Xa', editor.text.value
   end
 
   def test_replace_all_marks_dirty_only_when_text_changes
@@ -370,6 +447,8 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.instance_variable_set(:@app, app)
     pane.instance_variable_set(:@highlighter, Object.new)
     pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:rebuild_headers_cache) {}
+    app.define_singleton_method(:update_current_header) {}
 
     text.mark_set('insert', '2.0')
     pane.duplicate_line
@@ -387,6 +466,8 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.instance_variable_set(:@app, app)
     pane.instance_variable_set(:@highlighter, Object.new)
     pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:rebuild_headers_cache) {}
+    app.define_singleton_method(:update_current_header) {}
 
     text.mark_set('insert', '1.0')
     pane.duplicate_line
@@ -405,6 +486,8 @@ class EditorPaneRegressionTest < Minitest::Test
     pane.instance_variable_set(:@app, app)
     pane.instance_variable_set(:@highlighter, Object.new)
     pane.instance_variable_get(:@highlighter).define_singleton_method(:parse_line) { |_line_num| }
+    pane.instance_variable_get(:@highlighter).define_singleton_method(:rebuild_headers_cache) {}
+    app.define_singleton_method(:update_current_header) {}
 
     text.mark_set('insert', '2.0')
     pane.move_line_up
@@ -412,6 +495,57 @@ class EditorPaneRegressionTest < Minitest::Test
     assert marked
     assert_equal "beta\nalpha", text.value
     assert_equal '1.0', text.index('insert')
+  end
+
+  def test_bold_selection_leaves_the_cursor_after_the_closing_marks
+    pane = EditorPane.allocate
+    text = FakeText.new('say hello there')
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    text.tag_add('sel', '1.4', '1.9')
+
+    pane.insert_bold
+
+    assert_equal 'say **hello** there', text.value
+    assert_equal '1.13', text.index('insert')
+  end
+
+  def test_move_line_up_stops_when_the_selection_includes_the_first_line
+    pane = EditorPane.allocate
+    text = FakeText.new("alpha\nbeta")
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, Object.new)
+    text.tag_add('sel', '1.0', '2.4')
+    text.mark_set('insert', '2.0')
+
+    pane.move_line_up
+
+    assert_equal "alpha\nbeta", text.value
+  end
+
+  def test_move_line_up_rebuilds_the_heading_cache
+    pane = EditorPane.allocate
+    text = FakeText.new("# One\n# Two")
+    app = Object.new
+    app.define_singleton_method(:mark_modified) {}
+    app.define_singleton_method(:update_current_header) {}
+    highlighter = MarkdownHighlighter.new(text)
+    highlighter.rebuild_headers_cache
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@app, app)
+    pane.instance_variable_set(:@highlighter, highlighter)
+    text.mark_set('insert', '2.0')
+
+    pane.move_line_up
+
+    assert_equal '# Two', text.get('1.0', '1.end')
+    assert_equal 'Two', highlighter.get_headers[0][:text]
+    assert_equal 'One', highlighter.get_headers[1][:text]
   end
 
   def test_hr_shortcut_drops_mirrored_asterisks

@@ -322,10 +322,11 @@ class EditorPane
     @text.edit_separator
     if @text.tag_ranges('sel').any?
       @text.mark_set('temp_sel_end', 'sel.last')
+      @text.mark_gravity('temp_sel_end', 'right')
       @text.insert('sel.last', '**')
       @text.insert('sel.first', '**')
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', 'temp_sel_end + 2 chars')
+      @text.mark_set('insert', 'temp_sel_end')
       @text.mark_unset('temp_sel_end')
     else
       @text.insert('insert', '****')
@@ -340,10 +341,11 @@ class EditorPane
     @text.edit_separator
     if @text.tag_ranges('sel').any?
       @text.mark_set('temp_sel_end', 'sel.last')
+      @text.mark_gravity('temp_sel_end', 'right')
       @text.insert('sel.last', '*')
       @text.insert('sel.first', '*')
       @text.tag_remove('sel', '1.0', 'end')
-      @text.mark_set('insert', 'temp_sel_end + 1 char')
+      @text.mark_set('insert', 'temp_sel_end')
       @text.mark_unset('temp_sel_end')
     else
       @text.insert('insert', '**')
@@ -463,7 +465,6 @@ class EditorPane
 
   def move_line_up
     current_line, current_col = @text.index('insert').split('.').map(&:to_i)
-    return if current_line <= 1
 
     has_selection = @text.tag_ranges('sel').any?
     if has_selection
@@ -475,6 +476,7 @@ class EditorPane
     else
       start_line = end_line = current_line
     end
+    return if start_line <= 1
 
     block_text = @text.get("#{start_line}.0", "#{end_line}.end")
     prev_text = @text.get("#{start_line - 1}.0", "#{start_line - 1}.end")
@@ -486,12 +488,20 @@ class EditorPane
       @text.tag_add('sel', "#{start_line - 1}.0", "#{start_line - 1}.0 + #{block_text.length} chars")
     end
 
-    @text.mark_set('insert', "#{current_line - 1}.#{current_col}")
+    destination_line = if (start_line..end_line).cover?(current_line)
+                         current_line - 1
+                       elsif current_line == start_line - 1
+                         end_line
+                       else
+                         current_line
+                       end
+    @text.mark_set('insert', "#{destination_line}.#{current_col}")
     @text.see('insert')
     @text.edit_separator
     @app.mark_modified
 
     (start_line - 1).upto(end_line).each { |l| @highlighter.parse_line(l) }
+    refresh_heading_cache
   end
 
   def move_line_down
@@ -528,6 +538,7 @@ class EditorPane
     @app.mark_modified
 
     start_line.upto(end_line + 1).each { |l| @highlighter.parse_line(l) }
+    refresh_heading_cache
   end
 
   def duplicate_line
@@ -542,5 +553,11 @@ class EditorPane
     @app.mark_modified
 
     @highlighter.parse_line(current_line + 1)
+    refresh_heading_cache
+  end
+
+  def refresh_heading_cache
+    @highlighter.rebuild_headers_cache
+    @app.update_current_header
   end
 end
