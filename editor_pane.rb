@@ -12,6 +12,7 @@ class EditorPane
     @debounce_timer = nil
     @auto_close_marks = []
     @auto_close_seq = 0
+    @pending_line_star = false
     @callback_refs = []
     
     @text_frame = Tk::Tile::Frame.new(parent_frame)
@@ -233,36 +234,43 @@ class EditorPane
       char = ev.char
 
       if @text.tag_ranges('sel').empty?
+        # A star typed at the start of a line still pairs. Space between that
+        # pair drops the closer so the line becomes a list marker. Nothing else
+        # about pairing changes.
+        prepare_line_start_star_space if char == ' '
+        @pending_line_star = false unless char == '*' || char == ' '
+
         if PAIR_OPEN_TO_CLOSE.key?(char)
           closer = PAIR_OPEN_TO_CLOSE[char]
           if SYMMETRIC_PAIR_CHARS.include?(char)
             # Always scaffold *, ` so **, ***, and ``` can be typed through pairing
-            after_proc = proc {
-              @text.insert('insert', closer)
-              @text.mark_set('insert', 'insert - 1 char')
-            }
+            line_start_star = char == '*' && line_start_insert?
+            after_proc = proc { finish_symmetric_pair(closer, line_start_star) }
+            @callback_refs << after_proc
             Tk.after(0, &after_proc)
           else
             next_char = @text.get('insert', 'insert + 1 char')
-            if next_char == closer && consume_auto_close_mark
+            if next_char == closer && consume_auto_close_mark(closer)
               @text.mark_set('insert', 'insert + 1 char')
               next 'break'
             else
               after_proc = proc {
                 @text.insert('insert', closer)
                 @text.mark_set('insert', 'insert - 1 char')
-                register_auto_close_mark
+                register_auto_close_mark(closer)
               }
               Tk.after(0, &after_proc)
             end
           end
         elsif PAIR_CLOSER_CHARS.include?(char)
           next_char = @text.get('insert', 'insert + 1 char')
-          if next_char == char && consume_auto_close_mark
+          if next_char == char && consume_auto_close_mark(char)
             @text.mark_set('insert', 'insert + 1 char')
             next 'break'
           end
         end
+      else
+        @pending_line_star = false
       end
 
       next if ev.keysym.nil? || ev.keysym =~ /Shift|Control|Alt|Left|Right|Up|Down|Home|End|Prior|Next/
@@ -291,31 +299,78 @@ class EditorPane
     @text.bind('<<PasteSelection>>', paste_followup)
   end
 
-  def register_auto_close_mark
+  def register_auto_close_mark(expected)
     name = "autoclose_#{@auto_close_seq += 1}"
     @text.mark_set(name, 'insert')
     @text.mark_gravity(name, 'left')
-    @auto_close_marks << name
-    
+    @auto_close_marks << [name, expected]
+
     while @auto_close_marks.size > 10
-      old = @auto_close_marks.shift
-      @text.mark_unset(old) if @text.mark_names.include?(old)
+      old_name, = @auto_close_marks.shift
+      @text.mark_unset(old_name) if @text.mark_names.include?(old_name)
     end
   end
 
-  def consume_auto_close_mark
-    return false if @auto_close_marks.empty?
+  def consume_auto_close_mark(expected)
+    return false if @auto_close_marks.empty? || expected.nil?
+
     cursor = @text.index('insert')
-    match = @auto_close_marks.find { |m| @text.mark_names.include?(m) && @text.index(m) == cursor }
-    return false unless match
-    @auto_close_marks.delete(match)
-    @text.mark_unset(match)
+    found = @auto_close_marks.index do |name, closer|
+      next false unless @text.mark_names.include?(name)
+      next false unless closer == expected
+      next false unless @text.index(name) == cursor
+
+      @text.get(name, "#{name} + 1 char") == expected
+    end
+    return false unless found
+
+    name, = @auto_close_marks.delete_at(found)
+    @text.mark_unset(name)
     true
   end
 
   def reset_auto_close_tracking
-    @auto_close_marks.each { |m| @text.mark_unset(m) if @text.mark_names.include?(m) }
+    @auto_close_marks.each do |name, _expected|
+      @text.mark_unset(name) if @text.mark_names.include?(name)
+    end
     @auto_close_marks.clear
+  end
+
+  # True when the character about to be inserted would sit at column 0 or
+  # after indentation only. That is the position of a Markdown list marker.
+  def line_start_insert?
+    line, = @text.index('insert').to_s.split('.')
+    return false if line.nil? || line.empty?
+
+    prefix = @text.get("#{line}.0", 'insert')
+    prefix.nil? || prefix.empty? || prefix.match?(/\A[ \t]*\z/)
+  end
+
+  def finish_symmetric_pair(closer, line_start_star)
+    @text.insert('insert', closer)
+    @text.mark_set('insert', 'insert - 1 char')
+    @pending_line_star = line_start_star ? true : false
+  end
+
+  # The typed star is not in the buffer yet when this is decided. By the time
+  # space arrives, the closer is the character after the cursor. Delete that
+  # closer now and let Tk insert the space in its place.
+  def prepare_line_start_star_space
+    return false unless @pending_line_star
+
+    @pending_line_star = false
+    return false unless @text.tag_ranges('sel').empty?
+
+    previous = @text.get('insert - 1 char', 'insert')
+    following = @text.get('insert', 'insert + 1 char')
+    return false unless previous == '*' && following == '*'
+
+    line, = @text.index('insert').to_s.split('.')
+    prefix = @text.get("#{line}.0", 'insert - 1 char')
+    return false unless prefix.nil? || prefix.empty? || prefix.match?(/\A[ \t]*\z/)
+
+    @text.delete('insert', 'insert + 1 char')
+    true
   end
 
   def insert_bold

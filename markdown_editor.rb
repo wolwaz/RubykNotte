@@ -122,21 +122,23 @@ class MarkdownEditor
     return unless @recovery_writer
 
     Dir.mkdir(@backup_dir) unless Dir.exist?(@backup_dir)
-    tmp_file = "#{@backup_file}.tmp"
-    File.write(tmp_file, content, encoding: 'UTF-8')
-    FileUtils.mv(tmp_file, @backup_file, force: true)
-    write_recovery_meta
-  end
-
-  def write_recovery_meta
+    text_tmp = "#{@backup_file}.tmp"
+    meta_tmp = "#{@recovery_meta}.tmp"
     payload = {
       'path' => @current_filepath,
       'filename' => @current_filename,
       'saved_at' => Time.now.strftime('%Y-%m-%dT%H:%M:%S')
     }
-    tmp_file = "#{@recovery_meta}.tmp"
-    File.write(tmp_file, JSON.generate(payload), encoding: 'UTF-8')
-    FileUtils.mv(tmp_file, @recovery_meta, force: true)
+    File.write(text_tmp, content, encoding: 'UTF-8')
+    File.write(meta_tmp, JSON.generate(payload), encoding: 'UTF-8')
+    # Both temps exist before either live file changes. Text is renamed
+    # first so a crash keeps the new text even if the sidecar is still old.
+    FileUtils.mv(text_tmp, @backup_file, force: true)
+    FileUtils.mv(meta_tmp, @recovery_meta, force: true)
+  rescue StandardError
+    File.delete(text_tmp) if text_tmp && File.exist?(text_tmp)
+    File.delete(meta_tmp) if meta_tmp && File.exist?(meta_tmp)
+    raise
   end
 
   def claim_recovery_lock
@@ -285,19 +287,29 @@ class MarkdownEditor
     end
   end
 
-  def clear_current_recovery
+  def clear_current_recovery(previous_path = @current_filepath)
     return unless @recovery_writer
     return unless File.exist?(@backup_file) || (@recovery_meta && File.exist?(@recovery_meta))
 
     meta = read_recovery_meta(@backup_file)
-    source = meta['path']
-    source = nil unless source.is_a?(String) && !source.strip.empty?
-    return if source && source != @current_filepath
+    return unless recovery_belongs_to_save?(meta, previous_path)
 
     File.delete(@backup_file) if File.exist?(@backup_file)
     File.delete(@recovery_meta) if @recovery_meta && File.exist?(@recovery_meta)
   rescue SystemCallError
     nil
+  end
+
+  def recovery_belongs_to_save?(meta, previous_path)
+    source = meta['path']
+    source = nil unless source.is_a?(String) && !source.strip.empty?
+    if source
+      source == @current_filepath || source == previous_path
+    else
+      # A sidecar with no path belongs to the untitled buffer. Missing or
+      # unreadable metadata has no filename, so it is left on disk.
+      previous_path.nil? && meta['filename'].is_a?(String) && !meta['filename'].strip.empty?
+    end
   end
 
   def disable_tk_emacs_bindings
@@ -989,24 +1001,28 @@ class MarkdownEditor
     false
   end
 
-  def save_file
-    if @current_filepath.nil?
+  def save_file(path = nil)
+    path = @current_filepath if path.nil?
+    if path.nil?
       save_as_file
       return
     end
 
+    previous_path = @current_filepath
     begin
-      write_document_atomic(@current_filepath, @editor.text.get('1.0', 'end - 1 char'))
+      write_document_atomic(path, @editor.text.get('1.0', 'end - 1 char'))
     rescue => e
       Tk.messageBox(type: 'ok', icon: 'error', title: "Error Saving File", message: e.message)
       return
     end
 
+    @current_filepath = path
+    @current_filename = File.basename(path)
     @is_modified = false
     @status_center.text = @current_filename
     update_window_title
     update_status_left
-    clear_current_recovery
+    clear_current_recovery(previous_path)
   end
 
   def write_document_atomic(path, content)
@@ -1031,9 +1047,7 @@ class MarkdownEditor
       return if answer != 'yes'
     end
 
-    @current_filepath = filename
-    @current_filename = File.basename(filename)
-    save_file
+    save_file(filename)
   end
 
   def apply_theme

@@ -110,6 +110,10 @@ class FakeText
 
   def mark_gravity(_mark, _direction = nil); end
 
+  def mark_names
+    @marks.keys
+  end
+
   def see(_index); end
 
   def edit_separator; end
@@ -717,6 +721,92 @@ class FileOperationRegressionTest < Minitest::Test
     refute editor.is_modified
     assert_equal 'Untitled.md', status_center.text
   end
+
+  def test_space_after_a_line_start_star_drops_the_paired_closer
+    pane = EditorPane.allocate
+    text = FakeText.new
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@pending_line_star, false)
+    text.mark_set('insert', '1.0')
+
+    assert pane.line_start_insert?
+    text.insert('insert', '*')
+    pane.finish_symmetric_pair('*', true)
+    assert pane.prepare_line_start_star_space
+    text.insert('insert', ' ')
+
+    assert_equal '* ', text.value
+  end
+
+  def test_indented_line_start_star_also_drops_the_closer_on_space
+    pane = EditorPane.allocate
+    text = FakeText.new('  ')
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@pending_line_star, false)
+    text.mark_set('insert', '1.2')
+
+    assert pane.line_start_insert?
+    text.insert('insert', '*')
+    pane.finish_symmetric_pair('*', true)
+    assert pane.prepare_line_start_star_space
+    text.insert('insert', ' ')
+
+    assert_equal '  * ', text.value
+  end
+
+  def test_space_inside_a_mid_line_star_pair_keeps_the_closer
+    pane = EditorPane.allocate
+    text = FakeText.new('word ')
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@pending_line_star, false)
+    text.mark_set('insert', '1.5')
+
+    refute pane.line_start_insert?
+    text.insert('insert', '*')
+    pane.finish_symmetric_pair('*', false)
+    refute pane.prepare_line_start_star_space
+    text.insert('insert', ' ')
+
+    assert_equal 'word * *', text.value
+  end
+
+  def test_a_line_start_backtick_keeps_its_closer_when_space_is_typed
+    pane = EditorPane.allocate
+    text = FakeText.new
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@pending_line_star, false)
+    text.mark_set('insert', '1.0')
+    text.insert('insert', '`')
+    pane.finish_symmetric_pair('`', false)
+    refute pane.prepare_line_start_star_space
+    text.insert('insert', ' ')
+
+    assert_equal '` `', text.value
+  end
+
+  def test_auto_close_skips_only_while_the_expected_closer_is_still_there
+    pane = EditorPane.allocate
+    text = FakeText.new('()')
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@auto_close_marks, [])
+    pane.instance_variable_set(:@auto_close_seq, 0)
+    text.mark_set('insert', '1.1')
+    pane.register_auto_close_mark(')')
+
+    assert pane.consume_auto_close_mark(')')
+    assert_empty pane.instance_variable_get(:@auto_close_marks)
+
+    text = FakeText.new('(]')
+    pane.instance_variable_set(:@text, text)
+    pane.instance_variable_set(:@auto_close_marks, [])
+    pane.instance_variable_set(:@auto_close_seq, 0)
+    text.mark_set('insert', '1.1')
+    pane.register_auto_close_mark(')')
+
+    refute pane.consume_auto_close_mark(']')
+    refute pane.consume_auto_close_mark(')')
+    assert_equal 1, pane.instance_variable_get(:@auto_close_marks).size
+  end
 end
 
 class QuitRegressionTest < Minitest::Test
@@ -971,7 +1061,7 @@ class RecoveryRegressionTest < Minitest::Test
       editor = setup_editor(dir)
       note = File.join(dir, 'notes.md')
       File.write(editor.instance_variable_get(:@backup_file), 'unsaved')
-      File.write(editor.instance_variable_get(:@recovery_meta), '{}')
+      File.write(editor.instance_variable_get(:@recovery_meta), JSON.generate('path' => note, 'filename' => 'notes.md'))
       File.write("#{editor.instance_variable_get(:@backup_file)}.bak", 'older')
       editor.instance_variable_set(:@current_filepath, note)
       editor.instance_variable_set(:@current_filename, 'notes.md')
@@ -1004,6 +1094,67 @@ class RecoveryRegressionTest < Minitest::Test
     end
   end
 
+  def test_save_keeps_recovery_when_the_owner_is_unknown
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      note = File.join(dir, 'notes.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'crash text')
+      File.write(editor.instance_variable_get(:@recovery_meta), '{}')
+      editor.instance_variable_set(:@current_filepath, note)
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+      editor.instance_variable_get(:@editor).text.value = 'saved text'
+
+      editor.save_file
+
+      assert_equal 'crash text', File.read(editor.instance_variable_get(:@backup_file))
+      assert File.exist?(editor.instance_variable_get(:@recovery_meta))
+    end
+  end
+
+  def test_save_as_from_untitled_clears_a_sidecar_that_names_no_path
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      dest = File.join(dir, 'notes.md')
+      File.write(editor.instance_variable_get(:@backup_file), 'unsaved')
+      File.write(
+        editor.instance_variable_get(:@recovery_meta),
+        JSON.generate('path' => nil, 'filename' => 'Untitled.md')
+      )
+      editor.instance_variable_get(:@editor).text.value = 'saved text'
+      Tk.define_singleton_method(:getSaveFile) { |**_kwargs| dest }
+
+      editor.save_as_file
+
+      assert_equal dest, editor.instance_variable_get(:@current_filepath)
+      assert_equal 'saved text', File.read(dest)
+      refute File.exist?(editor.instance_variable_get(:@backup_file))
+      refute editor.is_modified
+    end
+  end
+
+  def test_save_as_keeps_the_previous_path_when_the_write_fails
+    Dir.mktmpdir('rubyknotte-recovery') do |dir|
+      editor = setup_editor(dir)
+      original = File.join(dir, 'notes.md')
+      File.write(original, 'old')
+      blocked = File.join(dir, 'missing', 'notes.md')
+      editor.instance_variable_set(:@current_filepath, original)
+      editor.instance_variable_set(:@current_filename, 'notes.md')
+      editor.instance_variable_set(:@is_modified, true)
+      editor.instance_variable_get(:@status_center).text = 'notes.md'
+      editor.instance_variable_get(:@editor).text.value = 'new text'
+      Tk.define_singleton_method(:getSaveFile) { |**_kwargs| blocked }
+
+      editor.save_as_file
+
+      assert_equal original, editor.instance_variable_get(:@current_filepath)
+      assert_equal 'notes.md', editor.instance_variable_get(:@current_filename)
+      assert_equal 'notes.md', editor.instance_variable_get(:@status_center).text
+      assert editor.is_modified
+      assert_equal 'old', File.read(original)
+    end
+  end
+
   def test_backup_writes_sidecar_with_the_open_path
     Dir.mktmpdir('rubyknotte-recovery') do |dir|
       editor = setup_editor(dir)
@@ -1016,6 +1167,8 @@ class RecoveryRegressionTest < Minitest::Test
       assert_equal '/tmp/notes.md', meta['path']
       assert_equal 'notes.md', meta['filename']
       assert_equal "# Note\n", File.read(editor.instance_variable_get(:@backup_file))
+      refute File.exist?("#{editor.instance_variable_get(:@backup_file)}.tmp")
+      refute File.exist?("#{editor.instance_variable_get(:@recovery_meta)}.tmp")
     end
   end
 
